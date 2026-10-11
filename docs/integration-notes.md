@@ -10,7 +10,7 @@ These helpers were added with the maintenance, usage, reporting and notification
 
 ```python
 with conn.transaction():
-    equipment = lock_equipment(conn, equipment_id)   # SELECT ... FOR UPDATE, 5 s lock timeout
+    equipment = lock_equipment(conn, equipment_id)  # SELECT ... FOR UPDATE, 5 s lock timeout
     require_lab_role(conn, actor_id, equipment["lab_id"], {...})
     # re-validate here, after the lock, then write
 ```
@@ -28,7 +28,9 @@ Call from inside your own transaction so the message commits or rolls back with 
 ```python
 from app.notifications import services as notifications
 
-message = notifications.build_message(notifications.APPROVED, equipment["name"], res["starts_at"], res["ends_at"])
+message = notifications.build_message(
+    notifications.APPROVED, equipment["name"], res["starts_at"], res["ends_at"]
+)
 notifications.create_notification(conn, res["student_id"], notifications.APPROVED, message, res["id"])
 ```
 

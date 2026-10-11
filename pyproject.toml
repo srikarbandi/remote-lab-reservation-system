@@ -1,5 +1,7 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so bare `pytest` (as CI runs it) can import `app`.
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 110
