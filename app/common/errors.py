@@ -2,7 +2,9 @@
 
 Body shape:
     {"error": {"code": "SLOT_CONFLICT", "message": "...", "request_id": "<UUID>"}}
-A "fields" object may be added for field validation errors.
+A "fields" object may be added for field validation errors, and a "details"
+object for extra machine-readable context (for example the reservations that
+block a maintenance interval).
 """
 
 from flask import g, jsonify
@@ -17,18 +19,34 @@ class ApiError(Exception):
     lock timeout.
     """
 
-    def __init__(self, status: int, code: str, message: str, fields: dict | None = None):
+    def __init__(
+        self,
+        status: int,
+        code: str,
+        message: str,
+        fields: dict | None = None,
+        details: dict | None = None,
+    ):
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
         self.fields = fields
+        self.details = details
 
 
-def error_response(status: int, code: str, message: str, fields: dict | None = None):
+def error_response(
+    status: int,
+    code: str,
+    message: str,
+    fields: dict | None = None,
+    details: dict | None = None,
+):
     body = {"error": {"code": code, "message": message, "request_id": g.get("request_id")}}
     if fields:
         body["error"]["fields"] = fields
+    if details:
+        body["error"]["details"] = details
     response = jsonify(body)
     response.status_code = status
     return response

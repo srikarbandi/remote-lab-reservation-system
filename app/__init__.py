@@ -50,7 +50,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(ApiError)
     def handle_api_error(exc: ApiError):
-        return error_response(exc.status, exc.code, exc.message, exc.fields)
+        return error_response(exc.status, exc.code, exc.message, exc.fields, exc.details)
 
     @app.errorhandler(404)
     def handle_404(_exc):
