@@ -28,6 +28,7 @@ REPORT = ROOT / "docs" / "reports" / "system-validation-report.md"
 PARTIAL_EVIDENCE_DIRS = ("drill-logs", "load-test-logs")
 STATUSES = ("Pass", "Fail", "Blocked", "Not executed")
 EXECUTED = {"Pass", "Fail"}
+DEFERRED = "Deferred"  # an approved deferral is a separate disposition (STP 13)
 DEVIATIONS_HEADING = "## Deviations from the STP"
 
 
@@ -83,6 +84,60 @@ def requirement_status(rows: list[dict]) -> list[tuple[str, list[str], str]]:
             state = "Not validated"
         result.append((requirement, [row["case_id"] for row in linked], state))
     return result
+
+
+def _percent(part: int, whole: int) -> str:
+    return f"{100 * part / whole:.1f}%" if whole else "undefined"
+
+
+def stp_metrics(rows: list[dict]) -> list[tuple[str, str, str]]:
+    """The STP section 14 metrics that the register can answer: (name, value, how it was worked out)."""
+    counts = status_counts(rows)
+    planned = [row for row in rows if row["status"] != DEFERRED]
+    executed = sum(counts[s] for s in EXECUTED)
+    requirements = requirement_status(planned)
+    validated = sum(1 for _, _, state in requirements if state == "Validated")
+    return [
+        (
+            "Execution coverage",
+            _percent(executed, len(planned)),
+            f"{executed} cases with Pass or Fail of {len(planned)} non-deferred planned cases; "
+            f"{counts['Blocked']} Blocked reported separately",
+        ),
+        (
+            "Pass rate",
+            _percent(counts["Pass"], executed),
+            f"{counts['Pass']} passed of {executed} executed",
+        ),
+        (
+            "Requirement coverage",
+            _percent(validated, len(requirements)),
+            f"{validated} of {len(requirements)} requirements have every mapped case passed; "
+            f"{counts[DEFERRED]} deferred cases reported separately",
+        ),
+    ]
+
+
+def exit_criteria(rows: list[dict]) -> list[tuple[str, int, int]]:
+    """STP 5.2 criteria the register can answer: (criterion, cases met, cases in scope)."""
+
+    def passed(selected: list[dict]) -> tuple[int, int]:
+        return sum(1 for row in selected if row["status"] == "Pass"), len(selected)
+
+    planned = [row for row in rows if row["status"] != DEFERRED]
+    functional = [row for row in rows if row["case_id"].startswith("TC-F-")]
+    high = [row for row in functional if row["priority"] == "High"]
+    medium = [row for row in functional if row["priority"] == "Medium"]
+    nonfunctional = [row for row in rows if row["case_id"].startswith("TC-NF-")]
+    security = [row for row in rows if row["case_id"].startswith("TC-SR-")]
+    executed = sum(1 for row in planned if row["status"] in EXECUTED)
+    return [
+        ("Every non-deferred case is executed (Pass or Fail)", executed, len(planned)),
+        ("Every High-priority functional case passes", *passed(high)),
+        ("Every non-functional case passes", *passed(nonfunctional)),
+        ("Every security case passes", *passed(security)),
+        ("Medium-priority functional cases pass (or have an approved deferral)", *passed(medium)),
+    ]
 
 
 def deviations_by_text(rows: list[dict], root: Path = ROOT) -> dict[str, list[str]]:
@@ -211,6 +266,38 @@ def render(rows: list[dict], generated: str, build: str, root: Path = ROOT) -> s
             add(f"- {problem}")
         add("")
 
+    add("## STP metrics (section 14)")
+    add("")
+    add("| Metric | Value | Worked out from |")
+    add("|---|---|---|")
+    for name, value, basis in stp_metrics(rows):
+        add(f"| {name} | {value} | {_cell(basis)} |")
+    add("")
+    add(
+        "Requirements under acceptance are taken to be every requirement that an STP case lists. Defect "
+        "metrics (aging, open defects by severity, density) come from the defect register, not from this "
+        "report."
+    )
+    add("")
+    add("## Exit criteria (STP 5.2)")
+    add("")
+    add("| Criterion | Cases | Met |")
+    add("|---|---|---|")
+    criteria = exit_criteria(rows)
+    for criterion, met, scope in criteria:
+        add(f"| {criterion} | {met} of {scope} | {'Yes' if scope and met == scope else 'No'} |")
+    add("")
+    if all(scope and met == scope for _, met, scope in criteria):
+        add(
+            "The case-based exit criteria are met. Defects and the review of evidence are assessed "
+            "outside this report."
+        )
+    else:
+        add(
+            "**The exit criteria are not met.** The criteria about critical and major defects and about the "
+            "review of evidence are assessed outside this report."
+        )
+    add("")
     add("## Result for every STP case")
     add("")
     add("| Case | Title | Level | Status | Build | Tester | Date | Evidence |")

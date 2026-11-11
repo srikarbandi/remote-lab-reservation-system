@@ -53,4 +53,4 @@ python scripts/system_validation_report.py          # rewrite the report
 python scripts/system_validation_report.py --check  # exit 1 if the committed report is out of date
 ```
 
-Regenerate it in the same commit whenever the register changes. It states how many cases have a recorded Pass, Fail, Blocked or no run, lists every deviation recorded in the run logs, shows the drill and load-test logs as partial evidence (they do not change a case's status), and marks a requirement Validated only when every case that lists it has passed. The report says it is interim until every case has a recorded Pass.
+Regenerate it in the same commit whenever the register changes. It states how many cases have a recorded Pass, Fail, Blocked or no run, works out the STP section 14 metrics (execution coverage, pass rate, requirement coverage) and the STP 5.2 exit criteria the register can answer, lists every deviation recorded in the run logs, shows the drill and load-test logs as partial evidence (they do not change a case's status), and marks a requirement Validated only when every case that lists it has passed. The report says it is interim until every case has a recorded Pass.

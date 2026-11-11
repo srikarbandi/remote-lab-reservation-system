@@ -263,3 +263,92 @@ def test_unknown_status_is_shown_not_dropped(status, tmp_path):
     text = render([row("TC-A-1", status)], tmp_path)
 
     assert f"| {status} | 1 |" in text
+
+
+# --- STP section 14 metrics and 5.2 exit criteria -------------------------------------------------
+
+
+def metric(rows, name):
+    return next(value for n, value, _ in svr.stp_metrics(rows) if n == name)
+
+
+def test_metrics_follow_the_stp_definitions():
+    rows = [
+        executed("TC-A-1", requirements="R1"),
+        executed("TC-A-2", requirements="R2"),
+        executed("TC-A-3", "Fail", requirements="R3"),
+        row("TC-A-4", "Blocked", requirements="R4"),
+        row("TC-A-5", requirements="R5"),
+        row("TC-A-6", requirements="R6"),
+        row("TC-A-7", requirements="R7"),
+        row("TC-A-8", requirements="R8"),
+        row("TC-A-9", "Deferred", requirements="R9"),
+    ]
+
+    # 3 executed of 8 non-deferred; 2 passed of 3 executed; 2 of 8 requirements (the deferred one is excluded).
+    assert metric(rows, "Execution coverage") == "37.5%"
+    assert metric(rows, "Pass rate") == "66.7%"
+    assert metric(rows, "Requirement coverage") == "25.0%"
+
+
+def test_pass_rate_is_undefined_when_nothing_has_been_executed():
+    rows = [row("TC-A-1"), row("TC-A-2", "Blocked")]
+
+    assert metric(rows, "Pass rate") == "undefined"
+    assert metric(rows, "Execution coverage") == "0.0%"
+
+
+def test_blocked_cases_do_not_raise_execution_coverage():
+    assert metric([row("TC-A-1", "Blocked"), executed("TC-A-2")], "Execution coverage") == "50.0%"
+
+
+def exit_rows():
+    return [
+        executed("TC-F-001", priority="High") | {"priority": "High"},
+        row("TC-F-002", priority="High") | {"priority": "High"},
+        executed("TC-F-003") | {"priority": "Medium"},
+        executed("TC-NF-001"),
+        executed("TC-SR-001"),
+        row("TC-SR-002"),
+    ]
+
+
+def test_exit_criteria_count_the_right_cases():
+    got = {name: (met, scope) for name, met, scope in svr.exit_criteria(exit_rows())}
+
+    assert got["Every non-deferred case is executed (Pass or Fail)"] == (4, 6)
+    assert got["Every High-priority functional case passes"] == (1, 2)
+    assert got["Every non-functional case passes"] == (1, 1)
+    assert got["Every security case passes"] == (1, 2)
+    assert got["Medium-priority functional cases pass (or have an approved deferral)"] == (1, 1)
+
+
+def test_exit_criteria_report_says_not_met_until_everything_passes(tmp_path):
+    text = render(exit_rows(), tmp_path)
+
+    assert "**The exit criteria are not met.**" in text
+    assert "| Every High-priority functional case passes | 1 of 2 | No |" in text
+    assert "| Every non-functional case passes | 1 of 1 | Yes |" in text
+
+
+def test_a_criterion_with_no_cases_is_not_reported_as_met(tmp_path):
+    rows = [executed("TC-F-001") | {"priority": "High"}]
+
+    text = render(rows, tmp_path)
+
+    assert "| Every security case passes | 0 of 0 | No |" in text
+    assert "**The exit criteria are not met.**" in text
+
+
+def test_exit_criteria_met_when_every_case_in_scope_passes(tmp_path):
+    rows = [
+        executed("TC-F-001") | {"priority": "High"},
+        executed("TC-F-002") | {"priority": "Medium"},
+        executed("TC-NF-001"),
+        executed("TC-SR-001"),
+    ]
+
+    text = render(rows, tmp_path)
+
+    assert "The case-based exit criteria are met." in text
+    assert "not met" not in text
