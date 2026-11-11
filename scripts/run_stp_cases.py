@@ -61,6 +61,7 @@ class CaseRun:
     fixture: str
     steps: list[Step] = field(default_factory=list)
     deviations: list[str] = field(default_factory=list)
+    evidence_note: str = ""
 
     def record(self, action: str, expected: str, observed: str, ok: bool, blocked: bool = False) -> bool:
         result = "Blocked" if blocked else ("Pass" if ok else "Fail")
@@ -230,6 +231,14 @@ def local(day: date, hour: int, minute: int = 0) -> datetime:
 # --- TC-F-016 usage recording ---------------------------------------------------------------------
 
 
+CHECKED_ROWS = (
+    "Every step that changes data also inspected the database rows after the request, as the STP requires."
+)
+READS_ONLY = (
+    "The case only reads data; the expected values follow from the fixture rows inserted into the database."
+)
+
+
 def run_f016(api: Api, fx: Fixture) -> CaseRun:
     run = CaseRun(
         "TC-F-016",
@@ -247,6 +256,7 @@ def run_f016(api: Api, fx: Fixture) -> CaseRun:
     r2 = fx.reservation(s1, e1, now - timedelta(minutes=30), now + timedelta(minutes=30), "Approved")
     r4 = fx.reservation(s1, e1, now - timedelta(hours=6), now - timedelta(hours=5), "Approved")
     usage_path = "/api/reservations/{}/usage"
+    run.evidence_note = CHECKED_ROWS
 
     # 1. Contained usage interval on R1 (5 minutes in, 5 minutes early: 50 of 60 minutes).
     body = {
@@ -366,6 +376,7 @@ def run_f017(api: Api, fx: Fixture) -> CaseRun:
         "Lab L1 (Asia/Kolkata) open 09:00-17:00 every day, administrator A1, technician T1. One item of "
         "equipment per scenario so the scenarios do not affect each other.",
     )
+    run.evidence_note = READS_ONLY
     lab = fx.lab("STP L1")
     a1 = fx.user("a1", lab, "Administrator")
     t1 = fx.user("t1", lab, "Technician")
@@ -492,6 +503,7 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
         "'removal releases the "
         "interval' are checked through the availability endpoint instead, which is what booking will consult."
     )
+    run.evidence_note = CHECKED_ROWS
     lab1, lab2 = fx.lab("STP L1"), fx.lab("STP L2")
     t1 = fx.user("t1", lab1, "Technician")
     s1 = fx.user("s1", lab1, "Student")
@@ -639,6 +651,9 @@ def run_f015(api: Api, fx: Fixture) -> CaseRun:
         "LAB-F-015",
         "Student S1 with an empty notification list, in a lab with equipment E1.",
     )
+    run.evidence_note = (
+        "No step that changes data could run, so there was nothing to inspect in the database."
+    )
     lab = fx.lab("STP L1")
     s1 = fx.user("s1", lab, "Student")
     fx.equipment(lab, "E1")
@@ -744,7 +759,7 @@ def render(run: CaseRun, commit: str, where: str, server: str, started: datetime
         "- The case was run through HTTP requests, not through the browser UI.",
         "- The fixture is synthetic and was inserted directly into the database.",
         "",
-        "Every step also inspected the database rows after the request, as the STP requires.",
+        run.evidence_note,
         "",
     ]
     return "\n".join(lines)
