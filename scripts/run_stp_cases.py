@@ -1,6 +1,7 @@
 """Execute STP system cases through the running application and record the evidence.
 
-Cases: TC-F-014 (maintenance blocks), TC-F-016 (usage recording), TC-F-017 (utilization report).
+Cases: TC-F-014 (maintenance blocks), TC-F-015 (notifications, blocked until booking exists),
+TC-F-016 (usage recording), TC-F-017 (utilization report).
 
 Each case builds its own synthetic fixture in the database, performs the STP steps as HTTP requests to
 the running application, and checks the response and the rows in the database afterwards (the STP says
@@ -628,7 +629,73 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
     return run
 
 
-CASES = {"TC-F-014": run_f014, "TC-F-016": run_f016, "TC-F-017": run_f017}
+# --- TC-F-015 notifications -----------------------------------------------------------------------
+
+
+def run_f015(api: Api, fx: Fixture) -> CaseRun:
+    run = CaseRun(
+        "TC-F-015",
+        "Notifications",
+        "LAB-F-015",
+        "Student S1 with an empty notification list, in a lab with equipment E1.",
+    )
+    lab = fx.lab("STP L1")
+    s1 = fx.user("s1", lab, "Student")
+    fx.equipment(lab, "E1")
+    needed = [
+        (
+            "Submit a request",
+            "POST /api/reservations",
+            "POST",
+            "/api/reservations",
+            {"purpose": "STP TC-F-015"},
+        ),
+        (
+            "Approve or reject a request",
+            "POST /api/reservations/{id}/decision",
+            "POST",
+            f"/api/reservations/{uuid4()}/decision",
+            {},
+        ),
+        ("List own history", "GET /api/reservations?scope=mine", "GET", "/api/reservations?scope=mine", None),
+    ]
+    missing = []
+    for action, label, method, path, body in needed:
+        reply = api.call(s1, method, path, body)
+        absent = reply.status in (404, 405, 501)
+        if absent:
+            missing.append(action)
+        run.record(
+            f"{action} ({label})",
+            "Endpoint exists, so the notification flow can be run",
+            f"{reply}: not implemented yet" if absent else f"{reply}: exists",
+            False,
+            blocked=absent,
+        )
+    if not missing:
+        raise SystemExit(
+            "TC-F-015: the reservation endpoints now exist; this runner needs the notification flow "
+            "(submit, approve, cancel, reject, maintenance cancellation, failed booking) "
+            "added before it can run."
+        )
+    notices = api.call(s1, "GET", "/api/notifications")
+    run.record(
+        "S1 reads own notifications (the part that exists today)",
+        "Empty list for a new student",
+        f"{notices}; {len((notices.data or {}).get('items', []))} item(s)",
+        notices.status == 200 and not (notices.data or {}).get("items"),
+    )
+    run.deviations.append(
+        "Submission, approval, cancellation and rejection are done by the reservations and approvals "
+        "modules, "
+        "which are not implemented, so no notification can be triggered through the application. The "
+        "notification service itself is covered by integration tests (test_notifications.py), which do not "
+        "replace this system case."
+    )
+    return run
+
+
+CASES = {"TC-F-014": run_f014, "TC-F-015": run_f015, "TC-F-016": run_f016, "TC-F-017": run_f017}
 
 
 # --- output ---------------------------------------------------------------------------------------
