@@ -531,20 +531,39 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
         listed and not offered(availability, local(day, 14), local(day, 15)),
     )
 
-    # 2. Booking across the block.
+    # 2. Booking across the block. Blocked until the reservations module can create a booking.
     probe = api.call(
         s1,
         "POST",
         "/api/reservations",
-        {"equipment_id": str(e1), "start": local(day, 14).isoformat(), "end": local(day, 15).isoformat()},
+        {
+            "equipment_id": str(e1),
+            "start": local(day, 14).isoformat(),
+            "end": local(day, 15).isoformat(),
+            "purpose": "STP TC-F-014",
+        },
     )
-    run.record(
-        "S1 tries to book E1 14:00-15:00 across the block",
-        "Rejected because of the block",
-        f"{probe}: the booking endpoint does not exist yet, so this step cannot run",
-        False,
-        blocked=True,
-    )
+    action = "S1 tries to book E1 14:00-15:00 across the block"
+    if probe.status in (404, 405, 501):
+        run.record(
+            action,
+            "Rejected because of the block",
+            f"{probe}: the booking endpoint does not exist yet, so this step cannot run",
+            False,
+            blocked=True,
+        )
+    else:
+        booked = fx.one(
+            "SELECT count(*) FROM reservations WHERE equipment_id = %s AND student_id = %s "
+            "AND starts_at < %s AND ends_at > %s",
+            (e1, s1, local(day, 15), local(day, 14)),
+        )[0]
+        run.record(
+            action,
+            "409, no reservation created inside the block",
+            f"{probe}; {booked} reservation(s) by S1 overlapping 14:00-15:00",
+            probe.status == 409 and booked == 0,
+        )
 
     # 3. Expand the block across the held request.
     reply = api.call(
