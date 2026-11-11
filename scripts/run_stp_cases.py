@@ -686,6 +686,7 @@ def render(run: CaseRun, commit: str, where: str, server: str, started: datetime
 def update_register(
     runs: list[CaseRun], commit: str, tester: str, evidence: dict[str, str], when: datetime
 ) -> None:
+    ending = "\r\n" if b"\r\n" in REGISTER.read_bytes() else "\n"  # keep the file's own line endings
     with REGISTER.open(newline="") as handle:
         reader = csv.DictReader(handle)
         fields = reader.fieldnames
@@ -704,7 +705,7 @@ def update_register(
             evidence_link=evidence[run.case_id],
         )
     with REGISTER.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator=ending)
         writer.writeheader()
         writer.writerows(rows)
 
