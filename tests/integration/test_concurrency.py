@@ -49,7 +49,7 @@ def book(conn, equipment_id, student_id, start, end):
         ).fetchone()["id"]
 
 
-def test_maintenance_waits_for_the_equipment_lock_then_revalidates(new_conn, world, db):
+def test_tc_edge_003_maintenance_waits_for_the_equipment_lock_then_revalidates(new_conn, world, db):
     """Deterministic TC-EDGE-003: a booking committed while maintenance waits must block the block."""
     holder = new_conn()
     outcome = {}
@@ -80,7 +80,7 @@ def test_maintenance_waits_for_the_equipment_lock_then_revalidates(new_conn, wor
     assert count(db, "maintenance_blocks") == 0 and count(db, "reservations") == 1
 
 
-def test_booking_waits_for_maintenance_and_is_rejected(new_conn, world, db):
+def test_tc_edge_003_booking_waits_for_maintenance_and_is_rejected(new_conn, world, db):
     """The mirror image: maintenance is in flight, the booking must see its block."""
     holder = new_conn()
     outcome = {}
@@ -139,7 +139,7 @@ def race_once(new_conn, world, equipment):
     return results
 
 
-def test_racing_booking_and_maintenance_never_both_win(new_conn, world, db):
+def test_tc_edge_003_racing_booking_and_maintenance_never_both_win(new_conn, world, db):
     """TC-EDGE-003 with synchronized independent connections, repeated on fresh equipment."""
     for round_number in range(20):
         equipment = add_equipment(db, world.l1, f"RACE{round_number}")
@@ -169,3 +169,31 @@ def test_different_equipment_does_not_contend(new_conn, world):
         started = time.monotonic()
         maintenance.create_block(new_conn(), world.tech1, world.e2, BASE, BASE + H, "Other item", None)
         assert time.monotonic() - started < 2
+
+
+def test_tc_f_014_block_removed_while_update_waits_for_the_lock_is_404(new_conn, world, db):
+    """The update re-reads the block after taking the equipment lock, so it must not write a stale row."""
+    block = maintenance.create_block(new_conn(), world.tech1, world.e1, BASE, BASE + H, "Calibration", None)
+    holder = new_conn()
+    outcome = {}
+
+    def run_update():
+        try:
+            outcome["block"] = maintenance.update_block(
+                new_conn(), world.tech1, block["id"], block["version"], reason="Late edit"
+            )
+        except ApiError as exc:
+            outcome["error"] = exc
+
+    with holder.transaction():
+        lock_equipment(holder, world.e1)
+        worker = threading.Thread(target=run_update)
+        worker.start()
+        time.sleep(0.5)
+        assert worker.is_alive(), "update must wait for the equipment lock"
+        holder.execute("DELETE FROM maintenance_blocks WHERE id = %s", (block["id"],))
+    worker.join(timeout=10)
+
+    assert "block" not in outcome, "update wrote to a block that was already removed"
+    assert (outcome["error"].status, outcome["error"].code) == (404, "MAINTENANCE_NOT_FOUND")
+    assert count(db, "maintenance_blocks") == 0
