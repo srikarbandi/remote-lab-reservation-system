@@ -21,4 +21,5 @@ venv/
 *.sqlite3
 *.dump
 *.sql.gz
+backups/
 docs/test-execution/evidence/
