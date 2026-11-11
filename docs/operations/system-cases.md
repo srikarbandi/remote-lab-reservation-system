@@ -43,3 +43,14 @@ The STP allows Pass, Fail, Blocked and Not executed.
 - TC-F-014 is Blocked until the reservations module can create a booking, because "book across the block" cannot run. The availability endpoint is used as the stand-in for "block prevents booking" and "removal releases the interval".
 - TC-F-015 (notifications) needs submit, approve, cancel and reject from the reservations and approvals modules. Until they exist the runner records it as Blocked: it checks that the submit, decision and history endpoints are missing, and that the notification list endpoint answers, and it stops there.
 - A Blocked case is not a failed case and not an executed one. Do not quote it as covered in the System Validation Report.
+
+## System Validation Report
+
+`docs/reports/system-validation-report.md` is generated from the execution register and the run logs, never typed by hand:
+
+```bash
+python scripts/system_validation_report.py          # rewrite the report
+python scripts/system_validation_report.py --check  # exit 1 if the committed report is out of date
+```
+
+Regenerate it in the same commit whenever the register changes. It states how many cases have a recorded Pass, Fail, Blocked or no run, lists every deviation recorded in the run logs, shows the drill and load-test logs as partial evidence (they do not change a case's status), and marks a requirement Validated only when every case that lists it has passed. The report says it is interim until every case has a recorded Pass.
