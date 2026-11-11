@@ -144,7 +144,8 @@ class Fixture:
 
     def user(self, name: str, lab: UUID | None = None, role: str | None = None) -> UUID:
         user_id = self.one(
-            "INSERT INTO users (identifier, password_hash) VALUES (%s, '!synthetic-not-a-real-hash') RETURNING id",
+            "INSERT INTO users (identifier, password_hash) "
+            "VALUES (%s, '!synthetic-not-a-real-hash') RETURNING id",
             (f"{name}-{self.tag}@lab.test",),
         )[0]
         if lab is not None:
@@ -163,7 +164,8 @@ class Fixture:
     def opening_all_week(self, lab: UUID, opens: time = time(9), closes: time = time(17)) -> None:
         for weekday in range(7):
             self.conn.execute(
-                "INSERT INTO lab_opening_intervals (lab_id, weekday, open_time, close_time) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO lab_opening_intervals (lab_id, weekday, open_time, close_time) "
+                "VALUES (%s, %s, %s, %s)",
                 (lab, weekday, opens, closes),
             )
 
@@ -204,7 +206,8 @@ class Fixture:
 
     def usage_rows(self, reservation: UUID) -> list[tuple]:
         return self.conn.execute(
-            "SELECT used_start, used_end, used_minutes, recorded_by FROM usage_records WHERE reservation_id = %s",
+            "SELECT used_start, used_end, used_minutes, recorded_by FROM usage_records "
+            "WHERE reservation_id = %s",
             (reservation,),
         ).fetchall()
 
@@ -286,7 +289,8 @@ def run_f016(api: Api, fx: Fixture) -> CaseRun:
     run.record(
         "Reset R1; T1 records it with no_show=true",
         "200, Completed, 0 minutes, no usage timestamps stored",
-        f"{reply}; {len(rows)} usage record(s) {[(r[0], r[1], r[2]) for r in rows]}; reservation {fx.status_of(r1)}",
+        f"{reply}; {len(rows)} usage record(s) {[(r[0], r[1], r[2]) for r in rows]}; "
+        f"reservation {fx.status_of(r1)}",
         ok,
     )
 
@@ -483,7 +487,8 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
     )
     run.deviations.append(
         "Booking cannot be tried through the application because the reservations module is not implemented; "
-        "H1 was inserted directly into the database. 'Valid block prevents booking' and 'removal releases the "
+        "H1 was inserted directly into the database. 'Valid block prevents booking' and "
+        "'removal releases the "
         "interval' are checked through the availability endpoint instead, which is what booking will consult."
     )
     lab1, lab2 = fx.lab("STP L1"), fx.lab("STP L2")
@@ -647,7 +652,8 @@ def render(run: CaseRun, commit: str, where: str, server: str, started: datetime
     lines += ["", "## Deviations from the STP", ""]
     lines += [f"- {d}" for d in run.deviations]
     lines += [
-        "- Users are logged in with the test-only `X-Test-User` header; the auth module cannot log users in yet. "
+        "- Users are logged in with the test-only `X-Test-User` header; the auth module cannot log "
+        "users in yet. "
         "Roles are still read from the database by the application.",
         "- The case was run through HTTP requests, not through the browser UI.",
         "- The fixture is synthetic and was inserted directly into the database.",
