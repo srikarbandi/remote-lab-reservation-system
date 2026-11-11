@@ -203,3 +203,186 @@ def test_availability_closed_override(db, db_client):
 
     assert response.status_code == 200
     assert response.get_json()["available"] == []
+
+
+def setup_admin(db):
+    user_id = uuid4()
+    lab_id = uuid4()
+
+    db.execute(
+        """
+        INSERT INTO users (id, identifier, password_hash)
+        VALUES (%s, %s, %s)
+        """,
+        (user_id, str(user_id), "test-hash")
+    )
+
+    db.execute(
+        "INSERT INTO labs (id, name) VALUES (%s, %s)",
+        (lab_id, str(lab_id))
+    )
+
+    db.execute(
+        """
+        INSERT INTO lab_memberships (user_id, lab_id, role)
+        VALUES (%s, %s, 'Administrator')
+        """,
+        (user_id, lab_id)
+    )
+
+    return user_id, lab_id
+
+
+def test_tc_f_013_admin_creates_equipment(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    response = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC200",
+            "name": "Oscilloscope",
+            "description": "Testing equipment"
+        }
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["code"] == "OSC200"
+
+
+def test_duplicate_equipment_code(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    payload = {
+        "lab_id": str(lab_id),
+        "code": "OSC200",
+        "name": "Oscilloscope"
+    }
+
+    headers = {"X-Test-User": str(admin_id)}
+
+    first = db_client.post("/api/equipment", headers=headers, json=payload)
+    second = db_client.post("/api/equipment", headers=headers, json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+
+
+def test_admin_edits_equipment(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC201",
+            "name": "Old Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={"name": "Digital Oscilloscope"}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["name"] == "Digital Oscilloscope"
+
+
+def test_admin_deactivates_free_equipment(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC202",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={"active": False}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["active"] is False
+
+
+def test_deactivation_with_pending_booking_is_blocked(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC203",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    start = datetime.now(IST) + timedelta(days=2)
+    end = start + timedelta(hours=1)
+
+    db.execute(
+        """
+        INSERT INTO reservations
+        (student_id, equipment_id, starts_at, ends_at, status, purpose)
+        VALUES (%s, %s, %s, %s, 'Pending', 'Experiment')
+        """,
+        (admin_id, equipment_id, start, end)
+    )
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={"active": False}
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "ACTIVE_RESERVATIONS"
+
+
+def test_student_cannot_manage_equipment(db, db_client):
+    student_id, lab_id, equipment_id = setup_equipment(db)
+
+    response = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(student_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "NOTALLOWED",
+            "name": "Unauthorized Equipment"
+        }
+    )
+
+    assert response.status_code == 403
+
+
+def test_unauthenticated_equipment_create(db_client):
+    response = db_client.post(
+        "/api/equipment",
+        json={
+            "lab_id": str(uuid4()),
+            "code": "OSC999",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert response.status_code == 401

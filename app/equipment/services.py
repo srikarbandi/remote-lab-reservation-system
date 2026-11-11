@@ -1,8 +1,13 @@
 
-
 from zoneinfo import ZoneInfo
 
+import psycopg
+
+from app.audit.services import record_event
 from app.common.errors import ApiError
+from app.common.locking import lock_equipment
+from app.common.permissions import ADMINISTRATOR, require_lab_role
+from app.common.validation import clean_text
 from app.reporting.calculations import (
     merge_intervals,
     opening_windows,
@@ -220,3 +225,135 @@ def get_availability(conn, user_id, equipment_id, selected_date):
         "maintenance": format_intervals(maintenance, tz),
         "available": format_intervals(free, tz)
     }
+
+
+def equipment_data(row):
+    return {
+        "id": str(row["id"]),
+        "lab_id": str(row["lab_id"]),
+        "code": row["code"],
+        "name": row["name"],
+        "description": row["description"],
+        "active": row["active"]
+    }
+
+
+def create_equipment(conn, actor_id, lab_id, code, name, description="", request_id=None):
+    code = clean_text(code, "code")
+    name = clean_text(name, "name")
+
+    if not isinstance(description, str) or len(description) > 500:
+        raise ApiError(422, "INVALID_FIELDS", "Invalid description.")
+
+    try:
+        with conn.transaction():
+            lab = conn.execute(
+                "SELECT id FROM labs WHERE id = %s",
+                (lab_id,)
+            ).fetchone()
+
+            if lab is None:
+                raise ApiError(404, "LAB_NOT_FOUND", "Lab does not exist.")
+
+            require_lab_role(conn, actor_id, lab_id, {ADMINISTRATOR})
+
+            row = conn.execute(
+                """
+                INSERT INTO equipment (lab_id, code, name, description)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, lab_id, code, name, description, active
+                """,
+                (lab_id, code, name, description.strip())
+            ).fetchone()
+
+            record_event(
+                conn, actor_id, "equipment.create",
+                "equipment", row["id"], "success", request_id
+            )
+
+            return equipment_data(row)
+
+    except psycopg.errors.UniqueViolation:
+        raise ApiError(
+            409, "DUPLICATE_CODE", "Equipment code already exists."
+        ) from None
+
+
+def update_equipment(conn, actor_id, equipment_id, changes, request_id=None):
+    if not changes:
+        raise ApiError(422, "INVALID_FIELDS", "No changes provided.")
+
+    permitted = {"code", "name", "description", "active"}
+
+    if set(changes) - permitted:
+        raise ApiError(422, "INVALID_FIELDS", "Unexpected equipment fields.")
+
+    values = {}
+
+    for field in ("code", "name"):
+        if field in changes:
+            values[field] = clean_text(changes[field], field)
+
+    if "description" in changes:
+        description = changes["description"]
+        if not isinstance(description, str) or len(description) > 500:
+            raise ApiError(422, "INVALID_FIELDS", "Invalid description.")
+        values["description"] = description.strip()
+
+    if "active" in changes:
+        if not isinstance(changes["active"], bool):
+            raise ApiError(422, "INVALID_FIELDS", "Active must be true or false.")
+        values["active"] = changes["active"]
+
+    try:
+        with conn.transaction():
+            equipment = lock_equipment(conn, equipment_id)
+
+            require_lab_role(
+                conn, actor_id, equipment["lab_id"], {ADMINISTRATOR}
+            )
+
+            if values.get("active") is False:
+                held = conn.execute(
+                    """
+                    SELECT id FROM reservations
+                    WHERE equipment_id = %s
+                      AND status IN ('Pending', 'Approved')
+                    LIMIT 1
+                    """,
+                    (equipment_id,)
+                ).fetchone()
+
+                if held is not None:
+                    raise ApiError(
+                        409,
+                        "ACTIVE_RESERVATIONS",
+                        "Resolve Pending or Approved bookings before deactivation."
+                    )
+
+            fields = list(values)
+            assignments = ", ".join(f"{field} = %s" for field in fields)
+            parameters = [values[field] for field in fields]
+
+            row = conn.execute(
+                f"""
+                UPDATE equipment
+                SET {assignments}
+                WHERE id = %s
+                RETURNING id, lab_id, code, name, description, active
+                """,
+                parameters + [equipment_id]
+            ).fetchone()
+
+            record_event(
+                conn, actor_id, "equipment.update",
+                "equipment", equipment_id, "success", request_id
+            )
+
+            return equipment_data(row)
+
+    except psycopg.errors.UniqueViolation:
+        raise ApiError(
+            409, "DUPLICATE_CODE", "Equipment code already exists."
+        ) from None
+
