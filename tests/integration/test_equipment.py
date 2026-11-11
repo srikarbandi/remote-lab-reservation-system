@@ -386,3 +386,12 @@ def test_unauthenticated_equipment_create(db_client):
     )
 
     assert response.status_code == 401
+
+def test_equipment_page_loads(client):
+    response = client.get("/api/equipment/ui")
+
+    assert response.status_code == 200
+    assert b"Velvet OS" in response.data
+    assert b"Laboratory Workspace" in response.data
+    assert b"boardDate" in response.data
+    assert b"scheduleEquipment" in response.data

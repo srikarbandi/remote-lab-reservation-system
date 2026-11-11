@@ -1,5 +1,5 @@
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, jsonify, render_template, request
 
 from app.common.auth_context import current_user_id
 from app.common.errors import ApiError
@@ -18,7 +18,12 @@ from app.equipment.services import (
     update_equipment,
 )
 
-bp = Blueprint("equipment", __name__, url_prefix="/api/equipment")
+bp = Blueprint(
+    "equipment",
+    __name__,
+    url_prefix="/api/equipment",
+    template_folder="templates"
+)
 
 
 @bp.get("")
@@ -117,3 +122,6 @@ def edit_equipment(equipment_id):
 
     return jsonify(result)
 
+@bp.get("/ui")
+def equipment_page():
+    return render_template("equipment/index.html")
