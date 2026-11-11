@@ -3,9 +3,9 @@ from flask import Blueprint, jsonify, request
 
 from app.common.auth_context import current_user_id
 from app.common.errors import ApiError
-from app.common.validation import parse_page, parse_uuid
+from app.common.validation import parse_date, parse_page, parse_uuid
 from app.db import connect, translate_db_errors
-from app.equipment.services import list_equipment
+from app.equipment.services import get_availability, list_equipment
 
 bp = Blueprint("equipment", __name__, url_prefix="/api/equipment")
 
@@ -36,3 +36,19 @@ def equipment_catalogue():
         "page": page,
         "page_size": page_size
     })
+
+
+@bp.get("/<equipment_id>/availability")
+def equipment_availability(equipment_id):
+    user_id = current_user_id()
+
+    equipment_uuid = parse_uuid(equipment_id, "equipment_id")
+    selected_date = parse_date(request.args.get("date"), "date")
+
+    with translate_db_errors():
+        with connect() as conn:
+            result = get_availability(
+                conn, user_id, equipment_uuid, selected_date
+            )
+
+    return jsonify(result)

@@ -1,5 +1,9 @@
 
+from datetime import datetime, time, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def setup_equipment(db):
@@ -16,13 +20,14 @@ def setup_equipment(db):
         (lab_id, "Electronics Lab")
     )
 
-    db.execute(
+    equipment_id = db.execute(
         """
         INSERT INTO equipment (lab_id, code, name, description, active)
         VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (lab_id, "OSC101", "Oscilloscope", "Digital oscilloscope", True)
-    )
+    ).fetchone()["id"]
 
     db.execute(
         """
@@ -32,11 +37,17 @@ def setup_equipment(db):
         (lab_id, "GEN101", "Signal Generator", "Signal generator", True)
     )
 
-    return user_id, lab_id
+    return user_id, lab_id, equipment_id
+
+
+def future_monday():
+    today = datetime.now(IST).date()
+    days = (7 - today.weekday()) % 7
+    return today + timedelta(days=days or 7)
 
 
 def test_tc_f_003_catalogue(db, db_client):
-    user_id, lab_id = setup_equipment(db)
+    user_id, lab_id, equipment_id = setup_equipment(db)
 
     response = db_client.get(
         "/api/equipment",
@@ -50,7 +61,7 @@ def test_tc_f_003_catalogue(db, db_client):
 
 
 def test_tc_f_004_search(db, db_client):
-    user_id, lab_id = setup_equipment(db)
+    user_id, lab_id, equipment_id = setup_equipment(db)
 
     response = db_client.get(
         "/api/equipment?name=osc",
@@ -61,3 +72,134 @@ def test_tc_f_004_search(db, db_client):
     data = response.get_json()
     assert data["total"] == 1
     assert data["items"][0]["name"] == "Oscilloscope"
+
+
+def test_tc_f_005_availability(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+    day = future_monday()
+
+    db.execute(
+        """
+        INSERT INTO lab_opening_intervals
+        (lab_id, weekday, open_time, close_time)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (lab_id, day.weekday(), time(9), time(17))
+    )
+
+    db.execute(
+        """
+        INSERT INTO reservations
+        (student_id, equipment_id, starts_at, ends_at, status, purpose)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (
+            user_id, equipment_id,
+            datetime.combine(day, time(10), IST),
+            datetime.combine(day, time(11), IST),
+            "Pending", "Testing"
+        )
+    )
+
+    db.execute(
+        """
+        INSERT INTO maintenance_blocks
+        (equipment_id, created_by, starts_at, ends_at, reason)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (
+            equipment_id, user_id,
+            datetime.combine(day, time(14), IST),
+            datetime.combine(day, time(15), IST),
+            "Calibration"
+        )
+    )
+
+    response = db_client.get(
+        f"/api/equipment/{equipment_id}/availability?date={day}",
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert data["equipment_name"] == "Oscilloscope"
+    assert data["timezone"] == "Asia/Kolkata"
+
+    free = [
+        (
+            datetime.fromisoformat(slot["start"]).hour,
+            datetime.fromisoformat(slot["end"]).hour
+        )
+        for slot in data["available"]
+    ]
+
+    assert free == [
+        (9, 10),
+        (11, 14),
+        (15, 17)
+    ]
+
+    assert len(data["reserved"]) == 1
+    assert len(data["maintenance"]) == 1
+
+
+def test_availability_requires_login(db_client):
+    response = db_client.get(
+        f"/api/equipment/{uuid4()}/availability?date={future_monday()}"
+    )
+
+    assert response.status_code == 401
+
+
+def test_availability_invalid_date(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+
+    response = db_client.get(
+        f"/api/equipment/{equipment_id}/availability?date=wrong",
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 422
+
+
+def test_availability_unknown_equipment(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+
+    response = db_client.get(
+        f"/api/equipment/{uuid4()}/availability?date={future_monday()}",
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 404
+
+
+def test_availability_closed_override(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+    day = future_monday()
+
+    db.execute(
+        """
+        INSERT INTO lab_opening_intervals
+        (lab_id, weekday, open_time, close_time)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (lab_id, day.weekday(), time(9), time(17))
+    )
+
+    db.execute(
+        """
+        INSERT INTO lab_opening_intervals (lab_id, override_date)
+        VALUES (%s, %s)
+        """,
+        (lab_id, day)
+    )
+
+    response = db_client.get(
+        f"/api/equipment/{equipment_id}/availability?date={day}",
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["available"] == []
