@@ -395,3 +395,14 @@ def test_equipment_page_loads(client):
     assert b"Laboratory Workspace" in response.data
     assert b"boardDate" in response.data
     assert b"scheduleEquipment" in response.data
+
+
+def test_velvet_os_reservation_form(client):
+    response = client.get("/api/equipment/ui")
+
+    assert response.status_code == 200
+    assert b"reservationForm" in response.data
+    assert b"bookingPurpose" in response.data
+    assert b"bookingSubmit" in response.data
+    assert b"/api/reservations" in response.data
+    assert b"Idempotency-Key" in response.data

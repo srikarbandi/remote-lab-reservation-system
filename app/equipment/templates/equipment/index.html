@@ -47,6 +47,44 @@
         <div class="slot-legend"><div class="legend"><span style="background:#528265"></span>Free</div><div class="legend"><span style="background:#a36684"></span>Reserved</div><div class="legend"><span style="background:#b19164"></span>Maintenance</div></div>
         <p class="muted" id="slotDateLabel">Select equipment to see opening hours and availability.</p><div class="slotlist" id="slotList"></div>
         <div class="note" id="slotSummary">Select a free interval to highlight it. Booking requests are handled by the separate reservations module.</div>
+        <div class="panel" style="margin-top:18px">
+            <h3>Request this equipment</h3>
+
+            <p class="muted">
+                Select a free future interval and enter your experiment purpose.
+            </p>
+
+            <form id="reservationForm">
+                <label for="bookingPurpose">Purpose of reservation</label>
+
+                <textarea
+                    id="bookingPurpose"
+                    rows="3"
+                    maxlength="500"
+                    required
+                    placeholder="Example: Testing a digital circuit"
+                    style="width:100%;margin:10px 0 14px"
+                ></textarea>
+
+                <button
+                    type="submit"
+                    class="primary"
+                    id="bookingSubmit"
+                >
+                    Submit Reservation Request
+                </button>
+            </form>
+
+            <p
+                class="muted"
+                id="bookingFeedback"
+                role="status"
+                aria-live="polite"
+            >
+                Select a free slot to continue.
+            </p>
+        </div>
+
       </section>
     </div>
   </section>
@@ -89,6 +127,83 @@ function setPreview(on){state.demo=on;$('modeLabel').textContent=on?'SAMPLE PREV
 async function saveAdmin(event){event.preventDefault();if(state.demo){message('Sample preview never changes the database.');return}const id=$('editEquipment').value;const payload={code:$('adminCode').value.trim(),name:$('adminName').value.trim(),description:$('adminDescription').value.trim()};if(!id)payload.lab_id=$('adminLab').value.trim();try{const csrf=document.querySelector('meta[name="csrf-token"]')?.content;const headers={'Content-Type':'application/json'};if(csrf)headers['X-CSRF-Token']=csrf;await api(id?`/api/equipment/${encodeURIComponent(id)}`:'/api/equipment',{method:id?'PATCH':'POST',headers,body:JSON.stringify(payload)});message('Equipment saved successfully.');$('editEquipment').value='';fillAdmin('');await load()}catch(e){message(e.message)}}
 async function deactivate(){if(state.demo){message('Preview does not change equipment.');return}const id=$('editEquipment').value;if(!id||!window.confirm('Deactivate this equipment? Only equipment without held bookings can be deactivated.'))return;try{const csrf=document.querySelector('meta[name="csrf-token"]')?.content;const headers={'Content-Type':'application/json'};if(csrf)headers['X-CSRF-Token']=csrf;await api(`/api/equipment/${encodeURIComponent(id)}`,{method:'PATCH',headers,body:JSON.stringify({active:false})});message('Equipment deactivated.');$('editEquipment').value='';fillAdmin('');await load()}catch(e){message(e.message)}}
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>switchView(b.dataset.view));$('previewToggle').onclick=()=>setPreview(!state.demo);$('refreshBtn').onclick=load;$('boardDate').value=state.date;$('boardDate').onchange=e=>changeDate(e.target.value);$('timeFilter').onchange=renderLanes;$('labFilter').onchange=renderLanes;$('search').oninput=renderLanes;$('collectionSearch').oninput=renderCollection;$('prevMonth').onclick=()=>shiftMonth(-1);$('nextMonth').onclick=()=>shiftMonth(1);$('scheduleEquipment').onchange=e=>{const item=state.items.find(x=>x.id===e.target.value);if(item){selection(item);switchView('board');renderLanes()}};$('openBoardCalendar').onclick=()=>switchView('board');$('editEquipment').onchange=e=>fillAdmin(e.target.value);$('adminForm').onsubmit=saveAdmin;$('resetAdmin').onclick=()=>{$('adminForm').reset();fillAdmin('')};$('deactivateAdmin').onclick=deactivate;state.month=state.date.slice(0,7);renderCalendar();if(location.protocol==='file:')setPreview(true);else load();
+
+async function submitReservation(event) {
+    event.preventDefault();
+
+    const feedback = $("bookingFeedback");
+    const button = $("bookingSubmit");
+
+    if (state.demo) {
+        feedback.textContent = "Switch to Live API mode to submit a real reservation.";
+        return;
+    }
+
+    if (!state.selected || !state.slot) {
+        feedback.textContent = "Please select equipment and a free time slot.";
+        return;
+    }
+
+    const purpose = $("bookingPurpose").value.trim();
+
+    if (!purpose) {
+        feedback.textContent = "Please enter the purpose of your reservation.";
+        return;
+    }
+
+    const start = new Date(state.slot.start);
+    const end = new Date(state.slot.end);
+
+    if (start <= new Date() || end <= start) {
+        feedback.textContent = "Please select a valid future time slot.";
+        return;
+    }
+
+    const payload = {
+        equipment_id: state.selected.id,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        purpose: purpose
+    };
+
+    const headers = {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID()
+    };
+
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+
+    if (csrf) {
+        headers["X-CSRF-Token"] = csrf;
+    }
+
+    button.disabled = true;
+    feedback.textContent = "Submitting reservation...";
+
+    try {
+        const result = await api("/api/reservations", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(payload)
+        });
+
+        feedback.textContent = `Reservation submitted! Status: ${result.status}.`;
+        $("bookingPurpose").value = "";
+
+        state.availability.clear();
+        await load();
+
+        message(`Your reservation is ${result.status}. Calendar refreshed.`);
+    } catch (error) {
+        feedback.textContent = error.message;
+        message(error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+$("reservationForm").addEventListener("submit", submitReservation);
+
 </script>
 </body>
 </html>
