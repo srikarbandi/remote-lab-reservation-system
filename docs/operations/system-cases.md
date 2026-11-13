@@ -43,3 +43,14 @@ The STP allows Pass, Fail, Blocked and Not executed.
 - Booking, approval, rejection and cancellation are run through the real reservations and approvals endpoints. Rows the case needs but that no endpoint creates (for example another student's Approved reservation, or the held request H1 in TC-F-014) are inserted directly into the database as fixtures; each log says so.
 - If the booking endpoint is missing from a build, TC-F-014 uses the availability endpoint as the stand-in and TC-F-015 records its first step as Blocked, so the same command works on older builds.
 - A Blocked case is not a failed case and not an executed one. Do not quote it as covered in the System Validation Report.
+
+## System Validation Report
+
+`docs/reports/system-validation-report.md` is generated from the execution register and the run logs, never typed by hand:
+
+```bash
+python scripts/system_validation_report.py          # rewrite the report
+python scripts/system_validation_report.py --check  # exit 1 if the committed report is out of date
+```
+
+Regenerate it in the same commit whenever the register changes. It states how many cases have a recorded Pass, Fail, Blocked or no run, works out the STP section 14 metrics (execution coverage, pass rate, requirement coverage) and the STP 5.2 exit criteria the register can answer, lists every deviation recorded in the run logs, shows the drill and load-test logs as partial evidence (they do not change a case's status), and marks a requirement Validated only when every case that lists it has passed. The report says it is interim until every case has a recorded Pass.
