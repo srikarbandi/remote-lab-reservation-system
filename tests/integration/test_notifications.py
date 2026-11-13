@@ -16,7 +16,7 @@ def world(db):
     return seed_world(db)
 
 
-def test_create_and_list_own_notification(new_conn, world, db):
+def test_tc_f_015_create_and_list_own_notification(new_conn, world, db):
     reservation = add_reservation(db, world.student1, world.e1, START, END)
     conn = new_conn()
     with conn.transaction():
@@ -28,7 +28,7 @@ def test_create_and_list_own_notification(new_conn, world, db):
     assert page["has_more"] is False
 
 
-def test_users_never_see_each_others_notifications(new_conn, world):
+def test_tc_f_015_users_never_see_each_others_notifications(new_conn, world):
     conn = new_conn()
     with conn.transaction():
         services.create_notification(conn, world.student1, services.APPROVED, "For S1 only.")
@@ -38,7 +38,7 @@ def test_users_never_see_each_others_notifications(new_conn, world):
     assert services.list_notifications(new_conn(), world.admin1)["items"] == []
 
 
-def test_rolled_back_transaction_leaves_no_notification(new_conn, world, db):
+def test_tc_edge_005_rolled_back_transaction_leaves_no_notification(new_conn, world, db):
     # TC-EDGE-005: the notification commits or rolls back with the state change it describes.
     conn = new_conn()
     with pytest.raises(RuntimeError), conn.transaction():
@@ -47,7 +47,7 @@ def test_rolled_back_transaction_leaves_no_notification(new_conn, world, db):
     assert count(db, "notifications") == 0
 
 
-def test_pagination_newest_first_and_has_more(new_conn, world):
+def test_tc_f_015_pagination_newest_first_and_has_more(new_conn, world):
     conn = new_conn()
     for i in range(5):
         with conn.transaction():
@@ -60,14 +60,21 @@ def test_pagination_newest_first_and_has_more(new_conn, world):
     assert last["has_more"] is False
 
 
-def test_unknown_event_type_is_rejected(new_conn, world):
+def test_tc_f_015_unknown_event_type_is_rejected(new_conn, world):
     with pytest.raises(ValueError):
         services.create_notification(new_conn(), world.student1, "NOT_A_TYPE", "x")
 
 
-def test_message_builder_uses_lab_time_and_reason():
+def test_tc_f_015_message_builder_uses_lab_time_and_reason():
     text = services.build_message(services.REJECTED, "Oscilloscope", START, END, reason="Class booked")
     assert "Oscilloscope" in text and "10:00-12:00" in text and "20 Oct 2026" in text
     assert text.endswith("Reason: Class booked")
     with pytest.raises(ValueError):
         services.build_message("NOPE", "x", START, END)
+
+
+def test_tc_f_015_message_without_a_reason_has_no_reason_text():
+    text = services.build_message(services.SUBMITTED, "Oscilloscope", START, END)
+    assert text == (
+        "Your request has been submitted and is Pending approval: Oscilloscope, 20 Oct 2026 10:00-12:00."
+    )

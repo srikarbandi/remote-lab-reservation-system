@@ -20,7 +20,7 @@ def as_user(user):
     return {"X-Test-User": str(user)}
 
 
-def test_maintenance_create_update_delete_over_http(db_client, world, db):
+def test_tc_f_014_maintenance_create_update_delete_over_http(db_client, world, db):
     created = db_client.post(
         "/api/maintenance",
         json={
@@ -57,7 +57,7 @@ def test_maintenance_create_update_delete_over_http(db_client, world, db):
     assert count(db, "maintenance_blocks") == 0
 
 
-def test_maintenance_conflict_names_the_blocking_reservations(db_client, world, db):
+def test_tc_f_014_maintenance_conflict_names_the_blocking_reservations(db_client, world, db):
     held = add_reservation(db, world.student1, world.e1, START + H, START + 2 * H, "Approved")
     response = db_client.post(
         "/api/maintenance",
@@ -74,7 +74,7 @@ def test_maintenance_conflict_names_the_blocking_reservations(db_client, world, 
     assert error["code"] == "MAINTENANCE_CONFLICT" and error["details"] == {"reservation_ids": [str(held)]}
 
 
-def test_student_cannot_create_maintenance_over_http(db_client, world, db):
+def test_tc_f_014_student_cannot_create_maintenance_over_http(db_client, world, db):
     response = db_client.post(
         "/api/maintenance",
         json={
@@ -88,7 +88,7 @@ def test_student_cannot_create_maintenance_over_http(db_client, world, db):
     assert response.status_code == 403 and count(db, "maintenance_blocks") == 0
 
 
-def test_usage_over_http(db_client, world, db):
+def test_tc_f_016_usage_over_http(db_client, world, db):
     past_start = datetime.now(UTC) - 5 * H
     past_end = past_start + 2 * H
     reservation = add_reservation(db, world.student1, world.e1, past_start, past_end, "Approved", version=2)
@@ -110,7 +110,7 @@ def test_usage_over_http(db_client, world, db):
     }
 
 
-def test_usage_no_show_and_rejection_over_http(db_client, world, db):
+def test_tc_f_016_usage_no_show_and_rejection_over_http(db_client, world, db):
     past_start = datetime.now(UTC) - 5 * H
     reservation = add_reservation(
         db, world.student1, world.e1, past_start, past_start + H, "Approved", version=1
@@ -133,7 +133,7 @@ def test_usage_no_show_and_rejection_over_http(db_client, world, db):
     assert no_show.status_code == 200 and no_show.get_json()["used_minutes"] == 0
 
 
-def test_report_over_http(db_client, world, db):
+def test_tc_f_017_report_over_http(db_client, world, db):
     for weekday in range(5):
         add_weekly_opening(db, world.l1, weekday)
     response = db_client.get(
@@ -153,7 +153,7 @@ def test_report_over_http(db_client, world, db):
     assert forbidden.status_code == 403
 
 
-def test_notifications_over_http_show_only_own(db_client, world, db):
+def test_tc_f_015_notifications_over_http_show_only_own(db_client, world, db):
     db.execute(
         "INSERT INTO notifications (user_id, event_type, message) VALUES (%s, 'APPROVED', 'mine'), (%s, 'REJECTED', 'theirs')",
         (world.student1, world.student2),
@@ -163,3 +163,31 @@ def test_notifications_over_http_show_only_own(db_client, world, db):
     body = response.get_json()
     assert [n["message"] for n in body["items"]] == ["mine"]
     assert body["page"] == 1 and body["page_size"] == 20 and body["has_more"] is False
+
+
+def test_tc_f_014_delete_accepts_expected_version_in_the_json_body(db_client, world, db):
+    created = db_client.post(
+        "/api/maintenance",
+        json={
+            "equipment_id": str(world.e1),
+            "start": "2026-10-20T10:00:00+05:30",
+            "end": "2026-10-20T12:00:00+05:30",
+            "reason": "Calibration",
+        },
+        headers=as_user(world.tech1),
+    )
+    block = created.get_json()
+
+    stale = db_client.delete(
+        f"/api/maintenance/{block['id']}", json={"expected_version": 99}, headers=as_user(world.admin1)
+    )
+    assert stale.status_code == 409 and stale.get_json()["error"]["code"] == "STALE_VERSION"
+    assert count(db, "maintenance_blocks") == 1
+
+    removed = db_client.delete(
+        f"/api/maintenance/{block['id']}",
+        json={"expected_version": block["version"]},
+        headers=as_user(world.admin1),
+    )
+    assert removed.status_code == 204 and removed.data == b""
+    assert count(db, "maintenance_blocks") == 0
