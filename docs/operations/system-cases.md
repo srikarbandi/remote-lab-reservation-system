@@ -1,6 +1,6 @@
 # Running STP system cases (TC-F-014, TC-F-015, TC-F-016, TC-F-017)
 
-`scripts/run_stp_cases.py` performs the steps of these STP cases as HTTP requests to the running application, inspects the database rows after each step, and writes a log per case. It exists so the System Validation Report rests on observed results, not on unit tests (the STP says a passing unit test supports a case but does not replace system-level evidence). TC-F-015 is included too, even though it cannot pass yet: the log shows which step stops it and why, and the same command re-runs it once the reservations and approvals modules are merged.
+`scripts/run_stp_cases.py` performs the steps of these STP cases as HTTP requests to the running application, inspects the database rows after each step, and writes a log per case. It exists so the System Validation Report rests on observed results, not on unit tests (the STP says a passing unit test supports a case but does not replace system-level evidence). TC-F-015 and the booking steps of TC-F-014 need the reservations and approvals modules; on a build without them the logs record Blocked, not Pass or Fail.
 
 ## Run it
 
@@ -40,8 +40,8 @@ The STP allows Pass, Fail, Blocked and Not executed.
 - Logins use the `X-Test-User` header. Re-run with real sessions once the auth module is merged.
 - Steps are HTTP requests, not browser UI actions.
 - Fixtures are synthetic and inserted directly into the database, because booking and approval are not implemented yet.
-- TC-F-014 is Blocked until the reservations module can create a booking, because "book across the block" cannot run. The availability endpoint is used as the stand-in for "block prevents booking" and "removal releases the interval".
-- TC-F-015 (notifications) needs submit, approve, cancel and reject from the reservations and approvals modules. Until they exist the runner records it as Blocked: it checks that the submit, decision and history endpoints are missing, and that the notification list endpoint answers, and it stops there.
+- Booking, approval, rejection and cancellation are run through the real reservations and approvals endpoints. Rows the case needs but that no endpoint creates (for example another student's Approved reservation, or the held request H1 in TC-F-014) are inserted directly into the database as fixtures; each log says so.
+- If the booking endpoint is missing from a build, TC-F-014 uses the availability endpoint as the stand-in and TC-F-015 records its first step as Blocked, so the same command works on older builds.
 - A Blocked case is not a failed case and not an executed one. Do not quote it as covered in the System Validation Report.
 
 ## System Validation Report
