@@ -107,10 +107,17 @@ class Api:
         parts = urlsplit(base_url)
         self.host, self.port = parts.hostname, parts.port or 80
 
-    def call(self, user: UUID, method: str, path: str, body: dict | None = None) -> Reply:
+    def call(
+        self,
+        user: UUID,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        headers: dict | None = None,
+    ) -> Reply:
         conn = http.client.HTTPConnection(self.host, self.port, timeout=30)
         try:
-            headers = {HEADER: str(user), "Accept": "application/json"}
+            headers = {HEADER: str(user), "Accept": "application/json", **(headers or {})}
             payload = None
             if body is not None:
                 payload = json.dumps(body)
@@ -497,12 +504,7 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
         "Lab L1 with technician T1 and equipment E1 holding a Pending request H1 10:00-11:00 tomorrow; "
         "lab L2 with equipment E2.",
     )
-    run.deviations.append(
-        "Booking cannot be tried through the application because the reservations module is not implemented; "
-        "H1 was inserted directly into the database. 'Valid block prevents booking' and "
-        "'removal releases the "
-        "interval' are checked through the availability endpoint instead, which is what booking will consult."
-    )
+    run.deviations.append("The held request H1 was inserted directly into the database as a fixture.")
     run.evidence_note = CHECKED_ROWS
     lab1, lab2 = fx.lab("STP L1"), fx.lab("STP L2")
     t1 = fx.user("t1", lab1, "Technician")
@@ -555,9 +557,14 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
             "end": local(day, 15).isoformat(),
             "purpose": "STP TC-F-014",
         },
+        {"Idempotency-Key": f"stp-f014-across-{fx.tag}"},
     )
     action = "S1 tries to book E1 14:00-15:00 across the block"
-    if probe.status in (404, 405, 501):
+    if probe.status in (404, 405, 501) and probe.code != "RESERVATION_NOT_FOUND":
+        run.deviations.append(
+            "The booking endpoint does not exist in this build, so 'book across the block' could not run; "
+            "the availability endpoint was used as the stand-in."
+        )
         run.record(
             action,
             "Rejected because of the block",
@@ -622,6 +629,30 @@ def run_f014(api: Api, fx: Fixture) -> CaseRun:
         f"{availability}; offered as available: {free}",
         free,
     )
+    if probe.status not in (404, 405, 501):
+        reply = api.call(
+            s1,
+            "POST",
+            "/api/reservations",
+            {
+                "equipment_id": str(e1),
+                "start": local(day, 14).isoformat(),
+                "end": local(day, 15).isoformat(),
+                "purpose": "STP TC-F-014 after removal",
+            },
+            {"Idempotency-Key": f"stp-f014-after-{fx.tag}"},
+        )
+        held = fx.one(
+            "SELECT count(*) FROM reservations WHERE equipment_id = %s AND student_id = %s "
+            "AND starts_at = %s AND status = 'Pending'",
+            (e1, s1, local(day, 14)),
+        )[0]
+        run.record(
+            "S1 books E1 14:00-15:00 after the block was removed",
+            "201, one Pending reservation stored for 14:00-15:00",
+            f"{reply}; {held} Pending reservation(s) at 14:00",
+            reply.status == 201 and held == 1,
+        )
 
     # 6. Technician of another lab.
     body = {
@@ -649,63 +680,162 @@ def run_f015(api: Api, fx: Fixture) -> CaseRun:
         "TC-F-015",
         "Notifications",
         "LAB-F-015",
-        "Student S1 with an empty notification list, in a lab with equipment E1.",
+        "Student S1 with an empty notification list, student S2, administrator A1, and equipment E1 in lab "
+        "L1 (open 09:00-17:00). S2 holds an Approved reservation at 14:00-15:00 tomorrow.",
     )
-    run.evidence_note = (
-        "No step that changes data could run, so there was nothing to inspect in the database."
-    )
+    run.evidence_note = CHECKED_ROWS
     lab = fx.lab("STP L1")
+    a1 = fx.user("a1", lab, "Administrator")
     s1 = fx.user("s1", lab, "Student")
-    fx.equipment(lab, "E1")
-    needed = [
-        (
-            "Submit a request",
-            "POST /api/reservations",
+    s2 = fx.user("s2", lab, "Student")
+    e1 = fx.equipment(lab, "E1")
+    fx.opening_all_week(lab)
+    day = datetime.now(LAB_TZ).date() + timedelta(days=1)
+    fx.reservation(s2, e1, local(day, 14), local(day, 15), "Approved")
+    run.deviations.append("S2's Approved reservation was inserted directly into the database as a fixture.")
+
+    def events(user: UUID) -> list[str]:
+        rows = fx.conn.execute(
+            "SELECT event_type FROM notifications WHERE user_id = %s ORDER BY created_at, id", (user,)
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    def submit(tag: str, start: datetime, end: datetime) -> Reply:
+        return api.call(
+            s1,
             "POST",
             "/api/reservations",
-            {"purpose": "STP TC-F-015"},
-        ),
-        (
-            "Approve or reject a request",
-            "POST /api/reservations/{id}/decision",
-            "POST",
-            f"/api/reservations/{uuid4()}/decision",
-            {},
-        ),
-        ("List own history", "GET /api/reservations?scope=mine", "GET", "/api/reservations?scope=mine", None),
-    ]
-    missing = []
-    for action, label, method, path, body in needed:
-        reply = api.call(s1, method, path, body)
-        absent = reply.status in (404, 405, 501)
-        if absent:
-            missing.append(action)
-        run.record(
-            f"{action} ({label})",
-            "Endpoint exists, so the notification flow can be run",
-            f"{reply}: not implemented yet" if absent else f"{reply}: exists",
-            False,
-            blocked=absent,
+            {"equipment_id": str(e1), "start": start.isoformat(), "end": end.isoformat(), "purpose": tag},
+            {"Idempotency-Key": f"stp-f015-{tag}-{fx.tag}"},
         )
-    if not missing:
-        raise SystemExit(
-            "TC-F-015: the reservation endpoints now exist; this runner needs the notification flow "
-            "(submit, approve, cancel, reject, maintenance cancellation, failed booking) "
-            "added before it can run."
-        )
-    notices = api.call(s1, "GET", "/api/notifications")
+
+    def status_of(reply: Reply) -> str:
+        return fx.status_of(reply.data["id"]) if reply.status == 201 else "none"
+
+    start_list = api.call(s1, "GET", "/api/notifications")
     run.record(
-        "S1 reads own notifications (the part that exists today)",
-        "Empty list for a new student",
-        f"{notices}; {len((notices.data or {}).get('items', []))} item(s)",
-        notices.status == 200 and not (notices.data or {}).get("items"),
+        "S1 reads own notifications before anything has happened",
+        "200 and an empty list",
+        f"{start_list}; {len((start_list.data or {}).get('items', []))} item(s); database: {events(s1)}",
+        start_list.status == 200 and not (start_list.data or {}).get("items") and events(s1) == [],
     )
-    run.deviations.append(
-        "Submission, approval, cancellation and rejection are done by the reservations and approvals "
-        "modules, "
-        "which are not implemented, so no notification can be triggered through the application. The "
-        "notification service itself is covered by integration tests (test_notifications.py), which do not "
-        "replace this system case."
+
+    first = submit("first", local(day, 10), local(day, 11))
+    if first.status in (404, 405, 501) and first.code != "RESERVATION_NOT_FOUND":
+        run.record(
+            "S1 submits a booking request (POST /api/reservations)",
+            "201, so the notification flow can be run",
+            f"{first}: the booking endpoint does not exist in this build",
+            False,
+            blocked=True,
+        )
+        return run
+
+    after_submit = api.call(s1, "GET", "/api/notifications")
+    run.record(
+        "S1 submits request R1 (10:00-11:00 tomorrow)",
+        "201 Pending, one SUBMITTED notice for S1",
+        f"{first}; S1 notices in the database: {events(s1)}",
+        first.status == 201 and events(s1) == ["SUBMITTED"],
+    )
+    r1 = first.data["id"] if first.status == 201 else None
+    ok = after_submit.status == 200 and len((after_submit.data or {}).get("items", [])) == 1
+    run.record(
+        "S1 reads own notifications through the API after submitting",
+        "200, exactly the one SUBMITTED notice",
+        f"{after_submit}; {[i['event_type'] for i in (after_submit.data or {}).get('items', [])]}",
+        ok,
+    )
+
+    reply = api.call(
+        a1, "POST", f"/api/reservations/{r1}/decision", {"decision": "Approved", "expected_version": 1}
+    )
+    run.record(
+        "A1 approves R1",
+        "200 Approved; S1 gets an APPROVED notice and A1 gets none",
+        f"{reply}; reservation {status_of(first)}; S1 notices: {events(s1)}; A1 notices: {events(a1)}",
+        reply.status == 200
+        and status_of(first) == "Approved"
+        and events(s1) == ["SUBMITTED", "APPROVED"]
+        and events(a1) == [],
+    )
+
+    version = fx.version_of(r1) if r1 else 0
+    reply = api.call(s1, "POST", f"/api/reservations/{r1}/cancel", {"expected_version": version})
+    run.record(
+        "S1 cancels R1",
+        "200 Cancelled; S1 gets a CANCELLED notice",
+        f"{reply}; reservation {status_of(first)}; S1 notices: {events(s1)}",
+        reply.status == 200 and status_of(first) == "Cancelled" and events(s1)[-1:] == ["CANCELLED"],
+    )
+
+    second = submit("second", local(day, 11), local(day, 12))
+    reply = api.call(
+        a1,
+        "POST",
+        f"/api/reservations/{second.data['id'] if second.status == 201 else uuid4()}/decision",
+        {"decision": "Rejected", "expected_version": 1, "reason": "Not suitable"},
+    )
+    run.record(
+        "S1 submits request R2 (11:00-12:00), then A1 rejects it with a reason",
+        "201 then 200 Rejected; S1 gets SUBMITTED then REJECTED notices",
+        f"{second}; {reply}; reservation {status_of(second)}; S1 notices: {events(s1)}",
+        second.status == 201
+        and reply.status == 200
+        and status_of(second) == "Rejected"
+        and events(s1)[-2:] == ["SUBMITTED", "REJECTED"],
+    )
+
+    third = submit("third", local(day, 12), local(day, 13))
+    before = events(s1)
+    reply = api.call(
+        a1,
+        "POST",
+        f"/api/reservations/{third.data['id'] if third.status == 201 else uuid4()}/cancel",
+        {"expected_version": 1, "reason": "Equipment maintenance"},
+    )
+    after = events(s1)
+    ok = (
+        third.status == 201
+        and reply.status == 200
+        and status_of(third) == "Cancelled"
+        and len(after) == len(before) + 1
+        and after[-1] in {"MAINTENANCE_CANCELLED", "CANCELLED"}
+    )
+    run.record(
+        "S1 submits request R3 (12:00-13:00); A1 cancels it with the reason 'Equipment maintenance'",
+        "200 Cancelled; S1 gets one maintenance-related cancellation notice",
+        f"{third}; {reply}; reservation {status_of(third)}; new S1 notices: {after[len(before) :]}",
+        ok,
+    )
+
+    before = events(s1)
+    rows_before = fx.one("SELECT count(*) FROM reservations WHERE student_id = %s", (s1,))[0]
+    failed = submit("failed", local(day, 14, 30), local(day, 15, 30))
+    rows_after = fx.one("SELECT count(*) FROM reservations WHERE student_id = %s", (s1,))[0]
+    run.record(
+        "S1 tries to book 14:30-15:30, which overlaps S2's Approved 14:00-15:00",
+        "409 conflict, no reservation created, no new notice for S1",
+        f"{failed}; reservations by S1 {rows_before} -> {rows_after}; new S1 notices: "
+        f"{events(s1)[len(before) :]}",
+        failed.status == 409 and rows_after == rows_before and events(s1) == before,
+    )
+
+    mine = api.call(s1, "GET", "/api/notifications")
+    seen = sorted(i["event_type"] for i in (mine.data or {}).get("items", []))
+    run.record(
+        "S1 reads own notifications through the API",
+        "Every notice in the database for S1, and nothing else",
+        f"{mine}; API {seen}; database {sorted(events(s1))}",
+        mine.status == 200 and seen == sorted(events(s1)),
+    )
+    theirs = api.call(s2, "GET", "/api/notifications")
+    run.record(
+        "S2 reads own notifications through the API",
+        "200 and an empty list: S1's notices are not visible to S2",
+        f"{theirs}; {len((theirs.data or {}).get('items', []))} item(s); S2 notices in the database: "
+        f"{events(s2)}",
+        theirs.status == 200 and not (theirs.data or {}).get("items") and events(s2) == [],
     )
     return run
 
