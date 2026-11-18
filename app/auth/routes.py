@@ -3,12 +3,13 @@ import secrets
 from flask import Blueprint, current_app, g, jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from app.auth.accounts import create_user, update_user
 from app.auth.services import login, token_hash
 from app.auth.sessions import authenticate, logout
 from app.common.errors import ApiError
 from app.db import connect, translate_db_errors
 
-bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+bp = Blueprint("auth", __name__, url_prefix="/api")
 
 SESSION_COOKIE = "lab_session"
 CSRF_COOKIE = "lab_csrf"
@@ -45,16 +46,44 @@ def require_csrf():
     cookie = request.cookies.get(CSRF_COOKIE, "")
     header = request.headers.get("X-CSRF-Token", "")
 
-    if not cookie or not header or not secrets.compare_digest(cookie, header):
+    matches = secrets.compare_digest(
+        cookie.encode("utf-8"),
+        header.encode("utf-8"),
+    )
+
+    if not cookie or not header or not matches:
         raise ApiError(403, "CSRF_FAILED", "Refresh the page and try again.")
 
     try:
         payload = csrf_serializer().loads(cookie, max_age=3600)
     except (BadSignature, SignatureExpired):
-        raise ApiError(403, "CSRF_FAILED", "Refresh the page and try again.") from None
+        raise ApiError(
+            403,
+            "CSRF_FAILED",
+            "Refresh the page and try again.",
+        ) from None
 
     if not isinstance(payload, dict) or payload.get("binding") != csrf_binding():
         raise ApiError(403, "CSRF_FAILED", "Refresh the page and try again.")
+
+
+def json_object():
+    if not request.is_json:
+        raise ApiError(400, "INVALID_JSON", "Send a JSON request body.")
+
+    body = request.get_json(silent=True)
+
+    if not isinstance(body, dict):
+        raise ApiError(400, "INVALID_JSON", "Send a JSON object.")
+
+    return body
+
+
+def require_session():
+    if g.get("user_id") is None or g.get("auth_session_id") is None:
+        raise ApiError(401, "UNAUTHENTICATED", "Please log in.")
+
+    return g.user_id
 
 
 @bp.before_app_request
@@ -70,7 +99,10 @@ def load_authentication():
             g.auth_session_id = identity["session_id"]
 
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        auth_endpoint = request.endpoint in {"auth.login_route", "auth.logout_route"}
+        auth_endpoint = request.endpoint in {
+            "auth.login_route",
+            "auth.logout_route",
+        }
 
         if token or auth_endpoint:
             require_csrf()
@@ -83,7 +115,7 @@ def prevent_auth_caching(response):
     return response
 
 
-@bp.get("/csrf")
+@bp.get("/auth/csrf")
 def csrf_route():
     response = jsonify({})
     token = issue_csrf(response, csrf_binding())
@@ -91,15 +123,9 @@ def csrf_route():
     return response
 
 
-@bp.post("/login")
+@bp.post("/auth/login")
 def login_route():
-    if not request.is_json:
-        raise ApiError(400, "INVALID_JSON", "Send a JSON request body.")
-
-    body = request.get_json(silent=True)
-
-    if not isinstance(body, dict):
-        raise ApiError(400, "INVALID_JSON", "Send a JSON object.")
+    body = json_object()
 
     if set(body) != {"identifier", "password"}:
         raise ApiError(
@@ -143,18 +169,15 @@ def login_route():
     return response
 
 
-@bp.get("/me")
+@bp.get("/auth/me")
 def me_route():
-    if g.get("user_id") is None:
-        raise ApiError(401, "UNAUTHENTICATED", "Please log in.")
-
-    return jsonify(user_id=str(g.user_id))
+    user_id = require_session()
+    return jsonify(user_id=str(user_id))
 
 
-@bp.post("/logout")
+@bp.post("/auth/logout")
 def logout_route():
-    if g.get("user_id") is None:
-        raise ApiError(401, "UNAUTHENTICATED", "Please log in.")
+    require_session()
 
     with translate_db_errors(), connect() as conn:
         logout(conn, request.cookies.get(SESSION_COOKIE), g.get("request_id"))
@@ -171,3 +194,67 @@ def logout_route():
         )
 
     return response
+
+
+@bp.post("/users")
+def create_user_route():
+    actor_id = require_session()
+    body = json_object()
+    required = {"identifier", "password", "lab_id", "role"}
+
+    if set(body) != required:
+        raise ApiError(
+            422,
+            "INVALID_FIELDS",
+            "Provide only identifier, password, lab_id and role.",
+        )
+
+    with translate_db_errors(), connect() as conn:
+        user = create_user(
+            conn,
+            actor_id,
+            body["identifier"],
+            body["password"],
+            body["lab_id"],
+            body["role"],
+            request_id=g.get("request_id"),
+        )
+
+    return jsonify(user=user), 201
+
+
+@bp.patch("/users/<user_id>")
+def update_user_route(user_id):
+    actor_id = require_session()
+    body = json_object()
+    allowed = {"lab_id", "role", "active"}
+
+    if (
+        "lab_id" not in body
+        or set(body) - allowed
+        or not ({"role", "active"} & set(body))
+    ):
+        raise ApiError(
+            422,
+            "INVALID_FIELDS",
+            "Provide lab_id and at least one of role or active.",
+        )
+
+    if "role" in body and body["role"] is None:
+        raise ApiError(422, "INVALID_ROLE", "Choose a valid lab role.")
+
+    if "active" in body and not isinstance(body["active"], bool):
+        raise ApiError(422, "INVALID_ACTIVE", "Active must be true or false.")
+
+    with translate_db_errors(), connect() as conn:
+        user = update_user(
+            conn,
+            actor_id,
+            user_id,
+            body["lab_id"],
+            role=body.get("role"),
+            active=body.get("active"),
+            request_id=g.get("request_id"),
+        )
+
+    return jsonify(user=user)
