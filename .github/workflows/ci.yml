@@ -32,6 +32,27 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.txt
+      - name: Pin PostgreSQL 16 client tools
+        # The backup/restore drill (TC-NF-005) runs pg_dump/pg_restore. A newer client writes
+        # settings the postgres:16 service rejects on restore (PG17's pg_dump emits
+        # transaction_timeout). Install the matching version-16 client and put it first.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+          echo "LAB_PG_BIN_DIR=/usr/lib/postgresql/16/bin" >> "$GITHUB_ENV"
+      - name: Verify the client matches the PostgreSQL 16 service
+        run: |
+          echo "pg_dump resolved on PATH: $(command -v pg_dump)"
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          /usr/lib/postgresql/16/bin/pg_dump --version | grep -q ' 16\.' \
+            || { echo "ERROR: pg_dump is not PostgreSQL 16"; exit 1; }
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest
