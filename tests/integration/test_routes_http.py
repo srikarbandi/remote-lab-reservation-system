@@ -227,3 +227,31 @@ def test_tc_f_006_overlapping_booking_returns_409(db_client, world, db):
     assert response.status_code == 409, response.get_json()
     assert response.get_json()["error"]["code"] == "SLOT_CONFLICT"
 
+def test_tc_f_006_idempotency_key_replay_creates_one_reservation(db_client, world, db):
+    future_start = datetime(2027, 1, 20, 4, 30, tzinfo=UTC)
+    future_end = future_start + 2 * H
+
+    add_weekly_opening(db, world.l1, future_start.weekday())
+
+    payload = {
+        "equipment_id": str(world.e1),
+        "start": future_start.isoformat(),
+        "end": future_end.isoformat(),
+        "purpose": "Idempotency test booking",
+    }
+    headers = {
+        **as_user(world.student1),
+        "Idempotency-Key": "idempotency-replay-test",
+    }
+
+    first = db_client.post(
+        "/api/reservations", json=payload, headers=headers
+    )
+    second = db_client.post(
+        "/api/reservations", json=payload, headers=headers
+    )
+
+    assert first.status_code == 201, first.get_json()
+    assert second.status_code == 201, second.get_json()
+    assert first.get_json()["id"] == second.get_json()["id"]
+    assert count(db, "reservations") == 1
