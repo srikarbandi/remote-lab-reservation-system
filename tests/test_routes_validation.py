@@ -18,14 +18,14 @@ PROTECTED = [
 
 
 @pytest.mark.parametrize(("method", "path"), PROTECTED)
-def test_protected_endpoints_require_login(client, method, path):
+def test_tc_sr_001_protected_endpoints_require_login(client, method, path):
     response = getattr(client, method)(path, json={})
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "UNAUTHENTICATED"
 
 
 @pytest.mark.parametrize("path", ["/api/maintenance", f"/api/reservations/{ID}/usage"])
-def test_non_json_body_is_400(client, path):
+def test_tc_sr_005_non_json_body_is_400(client, path):
     response = client.post(path, data="not json", headers=USER)
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "MALFORMED_JSON"
@@ -51,7 +51,7 @@ def valid_block():
         ({"reason": "x" * 501}, "reason"),
     ],
 )
-def test_maintenance_create_validation(client, change, bad_field):
+def test_tc_sr_005_maintenance_create_validation(client, change, bad_field):
     body = {**valid_block(), **change}
     response = client.post("/api/maintenance", json=body, headers=USER)
     assert response.status_code == 422
@@ -60,26 +60,26 @@ def test_maintenance_create_validation(client, change, bad_field):
     assert error["request_id"]
 
 
-def test_maintenance_create_missing_field(client):
+def test_tc_sr_005_maintenance_create_missing_field(client):
     body = valid_block()
     del body["reason"]
     response = client.post("/api/maintenance", json=body, headers=USER)
     assert response.status_code == 422 and "reason" in response.get_json()["error"]["fields"]
 
 
-def test_maintenance_update_needs_a_change_and_a_version(client):
+def test_tc_sr_005_maintenance_update_needs_a_change_and_a_version(client):
     assert (
         client.patch(f"/api/maintenance/{ID}", json={"expected_version": 1}, headers=USER).status_code == 422
     )
     assert client.patch(f"/api/maintenance/{ID}", json={"reason": "x"}, headers=USER).status_code == 422
 
 
-def test_maintenance_delete_needs_a_version(client):
+def test_tc_sr_005_maintenance_delete_needs_a_version(client):
     response = client.delete(f"/api/maintenance/{ID}", headers=USER)
     assert response.status_code == 400  # no query string and no JSON body
 
 
-def test_usage_body_validation(client):
+def test_tc_sr_005_usage_body_validation(client):
     path = f"/api/reservations/{ID}/usage"
     cases = [
         {"no_show": True},  # expected_version missing
@@ -91,7 +91,7 @@ def test_usage_body_validation(client):
         assert client.post(path, json=body, headers=USER).status_code == 422, body
 
 
-def test_report_query_validation(client):
+def test_tc_sr_005_report_query_validation(client):
     base = "/api/reports/utilization"
     assert client.get(base, headers=USER).status_code == 422
     assert (
@@ -104,12 +104,12 @@ def test_report_query_validation(client):
     )
 
 
-def test_notification_paging_validation(client):
+def test_tc_sr_005_notification_paging_validation(client):
     assert client.get("/api/notifications?page=0", headers=USER).status_code == 422
     assert client.get("/api/notifications?page_size=101", headers=USER).status_code == 422
 
 
-def test_database_outage_returns_503_contract(app):
+def test_tc_edge_005_database_outage_returns_503_contract(app):
     # Nothing listens on port 1, so the connection is refused immediately (SAD 4.3.5: 503, no internals leaked).
     app.config["DATABASE_URL"] = "postgresql://lab@127.0.0.1:1/none?connect_timeout=2"
     response = app.test_client().get("/api/notifications", headers=USER)

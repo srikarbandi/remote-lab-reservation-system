@@ -24,11 +24,15 @@ Layout, matching the STP test levels (STP section 5):
 | `integration/test_usage.py` | Integration | TC-F-016 |
 | `integration/test_reporting.py` | Integration | TC-F-017, TC-EDGE-006 |
 | `integration/test_concurrency.py` | Integration, real concurrent connections | TC-EDGE-003 |
+| `integration/test_audit.py` | Integration | TC-F-019 (the shared `record_event` helper only) |
 | `integration/test_routes_http.py` | HTTP with a real database | TC-F-014 to TC-F-017 |
 
 These automated tests support the STP cases but do not by themselves mark them executed. The execution register (`docs/test-execution/execution-register.csv`) is updated only after the case is run as written in the STP, with evidence.
 
-Naming: name tests after the STP case where there is one, for example `test_tc_f_014_...`. Case IDs are in the execution register.
+Naming: tests are named after the STP case they support, for example `test_tc_f_014_...`, with `tc_edge_...` for the
+supplemental cases. Run one case with `pytest -k tc_f_014`. Case IDs are in the execution register. Tests without a
+prefix have no STP case yet: the three smoke tests, `test_lock_timeout_returns_503_and_changes_nothing` and
+`test_different_equipment_does_not_contend`.
 
 Rules from the STP:
 

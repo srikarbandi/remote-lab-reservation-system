@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote Laboratory — Accounts</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #f3f5f8; color: #172338; font: 16px Arial, sans-serif; }
+main { max-width: 950px; margin: 40px auto; padding: 20px; }
+header { margin-bottom: 28px; }
+h1 { font-size: 28px; }
+h2 { font-size: 20px; margin-top: 0; }
+section { background: white; padding: 24px; border: 1px solid #dce2ea; border-radius: 8px; margin-bottom: 20px; }
+label { display: block; margin: 14px 0 6px; }
+input, select, button { font: inherit; padding: 11px; border-radius: 5px; }
+input, select { width: 100%; border: 1px solid #aab5c4; }
+button { border: 0; background: #254f88; color: white; cursor: pointer; margin-top: 18px; }
+button:disabled { opacity: .6; cursor: wait; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+#message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; margin-bottom: 18px; border-radius: 5px; }
+.success { background: #e3f3e9; color: #155b32; }
+.error { background: #fbe6e6; color: #812626; }
+small { color: #566477; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Remote Laboratory Reservation System</h1>
+<p>Authentication and account management</p>
+</header>
+
+<div id="message" role="status" aria-live="polite" hidden></div>
+
+<section id="login-section">
+<h2>Log in</h2>
+<p>Use an account provisioned by your laboratory administrator.</p>
+<form id="login-form">
+<label for="identifier">Identifier</label>
+<input id="identifier" autocomplete="username" maxlength="100" required>
+<label for="password">Password</label>
+<input id="password" type="password" autocomplete="current-password" maxlength="1024" required>
+<button type="submit">Log in</button>
+</form>
+</section>
+
+<section id="session-section" hidden>
+<h2>Current session</h2><p><a href="/api/equipment/ui">Open equipment workspace</a></p>
+<p id="identity"></p>
+<p id="membership"></p>
+<button id="logout" type="button">Log out</button>
+</section>
+
+<div id="admin-section" hidden>
+<p>Choose a laboratory you administer.</p>
+<label for="lab">Laboratory</label>
+<select id="lab"></select>
+<br><br>
+<div class="grid">
+<section>
+<h2>Create account</h2>
+<form id="create-form">
+<label for="new-identifier">Identifier</label>
+<input id="new-identifier" autocomplete="off" maxlength="100" required>
+<label for="new-password">Initial password</label>
+<input id="new-password" type="password" autocomplete="new-password" maxlength="1024" required>
+<label for="new-role">Laboratory role</label>
+<select id="new-role">
+<option>Student</option>
+<option>Technician</option>
+<option>Administrator</option>
+</select>
+<button type="submit">Create account</button>
+</form>
+</section>
+
+<section>
+<h2>Update account</h2>
+<small>Enter the user ID returned when the account was created.</small>
+<form id="update-form">
+<label for="user-id">User ID</label>
+<input id="user-id" required>
+<label for="updated-role">Role change</label>
+<select id="updated-role">
+<option value="">Keep current role</option>
+<option>Student</option>
+<option>Technician</option>
+<option>Administrator</option>
+</select>
+<label for="updated-active">Account status change</label>
+<select id="updated-active">
+<option value="">Keep current status</option>
+<option value="true">Enable account</option>
+<option value="false">Disable account</option>
+</select>
+<button type="submit">Save changes</button>
+</form>
+</section>
+</div>
+</div>
+</main>
+
+<script>
+let csrf = "";
+
+const byId = id => document.getElementById(id);
+
+function message(text, error = false) {
+  const box = byId("message");
+  box.textContent = text;
+  box.className = error ? "error" : "success";
+  box.hidden = false;
+}
+
+async function refreshCsrf() {
+  const response = await fetch("/api/auth/csrf", {
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Could not prepare the request.");
+  }
+  csrf = data.csrf_token;
+}
+
+async function api(path, method, body) {
+  if (!csrf) await refreshCsrf();
+  const response = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrf
+    },
+    body: JSON.stringify(body)
+  });
+  const data = response.status === 204 ? {} : await response.json();
+  if (!response.ok) {
+    if (response.status === 403 && data.error?.code === "CSRF_FAILED") {
+      csrf = "";
+    }
+    throw new Error(data.error?.message || `Request failed (${response.status}).`);
+  }
+  return data;
+}
+
+function showUser(user) {
+  byId("login-section").hidden = true;
+  byId("session-section").hidden = false;
+  byId("identity").textContent = `${user.identifier} | User ID: ${user.id}`;
+  const memberships = user.memberships || [];
+  byId("membership").textContent = memberships.map(
+    item => `${item.role} — Lab ${item.lab_id}`
+  ).join(" | ") || "No laboratory memberships.";
+  const administrators = memberships.filter(
+    item => item.role === "Administrator"
+  );
+  byId("lab").replaceChildren();
+  for (const item of administrators) {
+    const option = document.createElement("option");
+    option.value = item.lab_id;
+    option.textContent = item.lab_id;
+    byId("lab").append(option);
+  }
+  byId("admin-section").hidden = administrators.length === 0;
+}
+
+async function run(button, action) {
+  button.disabled = true;
+  try {
+    await action();
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+byId("login-form").addEventListener("submit", event => {
+  event.preventDefault();
+  run(event.submitter, async () => {
+    const data = await api("/api/auth/login", "POST", {
+      identifier: byId("identifier").value.trim(),
+      password: byId("password").value
+    });
+    csrf = data.csrf_token;
+    byId("password").value = "";
+    showUser(data.user);
+    message("Logged in successfully.");
+  });
+});
+
+byId("logout").addEventListener("click", event => {
+  run(event.currentTarget, async () => {
+    await api("/api/auth/logout", "POST", {});
+    csrf = "";
+    byId("login-section").hidden = false;
+    byId("session-section").hidden = true;
+    byId("admin-section").hidden = true;
+    byId("create-form").reset();
+    byId("update-form").reset();
+    message("Logged out successfully.");
+  });
+});
+
+byId("create-form").addEventListener("submit", event => {
+  event.preventDefault();
+  run(event.submitter, async () => {
+    const data = await api("/api/users", "POST", {
+      identifier: byId("new-identifier").value.trim(),
+      password: byId("new-password").value,
+      lab_id: byId("lab").value,
+      role: byId("new-role").value
+    });
+    byId("new-password").value = "";
+    byId("user-id").value = data.user.id;
+    message(`Account created.\nIdentifier: ${data.user.identifier}\nUser ID: ${data.user.id}\nRole: ${data.user.role}`);
+  });
+});
+
+byId("update-form").addEventListener("submit", event => {
+  event.preventDefault();
+  run(event.submitter, async () => {
+    const body = { lab_id: byId("lab").value };
+    const role = byId("updated-role").value;
+    const active = byId("updated-active").value;
+    if (role) body.role = role;
+    if (active !== "") body.active = active === "true";
+    if (!role && active === "") {
+      throw new Error("Choose a role or account status change.");
+    }
+    const userId = byId("user-id").value.trim();
+    const data = await api(`/api/users/${encodeURIComponent(userId)}`, "PATCH", body);
+    message(`Account updated.\nUser ID: ${data.user.id}\nRole: ${data.user.role}\nActive: ${data.user.active}`);
+  });
+});
+</script>
+</body>
+</html>

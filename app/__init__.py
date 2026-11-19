@@ -1,16 +1,10 @@
-"""Remote Laboratory Equipment Reservation System (Team 16).
-
-Layered modular monolith: controllers (routes.py) -> services (services.py) ->
-parameterized database access. See docs/Team16_Remote_Laboratory_SAD.docx.
-"""
-
 import uuid
+from importlib import import_module
 
-from flask import Flask, g, jsonify, request
+from flask import Flask, g, jsonify, render_template, request
 
 from app.common.errors import ApiError, error_response
 
-# (module name, import path). Each module exposes a Blueprint called `bp`.
 MODULES = [
     "auth",
     "equipment",
@@ -30,13 +24,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         DATABASE_URL="postgresql://lab:lab@localhost:5432/lab",
         TIMEZONE="Asia/Kolkata",
     )
-    app.config.from_prefixed_env()  # e.g. FLASK_SECRET_KEY, FLASK_DATABASE_URL
+    app.config.from_prefixed_env()
     if test_config:
         app.config.update(test_config)
 
     @app.before_request
     def assign_request_id() -> None:
-        # Correlation ID for logs, audit events and error bodies (SAD 4.4).
         g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
 
     @app.after_request
@@ -48,24 +41,35 @@ def create_app(test_config: dict | None = None) -> Flask:
     def healthz():
         return jsonify(status="ok")
 
+    @app.get("/accounts")
+    def accounts_page():
+        response = app.make_response(render_template("accounts.html"))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.errorhandler(ApiError)
     def handle_api_error(exc: ApiError):
-        return error_response(exc.status, exc.code, exc.message, exc.fields, exc.details)
+        return error_response(
+            exc.status, exc.code, exc.message, exc.fields, exc.details
+        )
 
     @app.errorhandler(404)
     def handle_404(_exc):
-        return error_response(404, "NOT_FOUND", "The requested resource does not exist.")
+        return error_response(
+            404, "NOT_FOUND", "The requested resource does not exist."
+        )
 
     @app.errorhandler(405)
     def handle_405(_exc):
-        return error_response(405, "METHOD_NOT_ALLOWED", "Method not allowed for this endpoint.")
+        return error_response(
+            405, "METHOD_NOT_ALLOWED", "Method not allowed for this endpoint."
+        )
 
     @app.errorhandler(500)
     def handle_500(_exc):
-        # Never expose SQL or stack traces (SAD 4.3.5).
-        return error_response(500, "INTERNAL_ERROR", "An unexpected error occurred.")
-
-    from importlib import import_module
+        return error_response(
+            500, "INTERNAL_ERROR", "An unexpected error occurred."
+        )
 
     for name in MODULES:
         module = import_module(f"app.{name}.routes")

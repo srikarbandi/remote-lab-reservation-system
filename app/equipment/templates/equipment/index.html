@@ -25,7 +25,7 @@
   <div class="side-footer">Designed for discovery.<br>Built for the laboratory.<br><span style="color:#9a869e">Remote Lab · Equipment & Availability</span></div>
 </aside>
 <main class="content">
-  <div class="topline"><span class="crumb">LABORATORY / WORKSPACE</span><div class="top-actions"><span class="pill" id="modeLabel">LIVE API</span><button type="button" class="pill" id="previewToggle" aria-pressed="false">Preview sample design</button></div></div>
+  <div class="topline"><span class="crumb">LABORATORY / WORKSPACE</span><div class="top-actions"><a class="pill" href="/accounts">Login / Accounts</a><span class="pill" id="modeLabel">LIVE API</span><button type="button" class="pill" id="previewToggle" aria-pressed="false">Preview sample design</button></div></div>
   <div id="message" class="message" role="status" aria-live="polite">Loading your laboratory workspace…</div>
   <section id="boardView" class="view active" aria-label="Flow Board">
     <h1>Equipment Flow.</h1><p class="lead">A quieter way to see what your laboratory can do — and when.</p>
@@ -103,7 +103,31 @@ function localDateTime(day,hour){return new Date(`${day}T${hour}:00+05:30`).toIS
 function demoAvailability(item,day){const d=day||state.date;let windows=[{start:localDateTime(d,'09:00'),end:localDateTime(d,'17:00')}],reserved=[],maintenance=[];if(item.id==='demo-osc')reserved=[{start:localDateTime(d,'10:00'),end:localDateTime(d,'11:00')}];if(item.id==='demo-dmm')reserved=[{start:localDateTime(d,'11:00'),end:localDateTime(d,'13:00')}];if(item.id==='demo-prt')maintenance=[{start:localDateTime(d,'09:00'),end:localDateTime(d,'15:00')}];if(item.id==='demo-fg')maintenance=[{start:localDateTime(d,'11:00'),end:localDateTime(d,'14:00')}];return {equipment_id:item.id,date:d,timezone:'Asia/Kolkata',opening_hours:windows,reserved,maintenance,available:subtract(windows,[...reserved,...maintenance])}}
 function subtract(windows,blocks){const result=[];for(const w of windows){let starts=[[new Date(w.start).getTime(),new Date(w.end).getTime()]];for(const block of blocks){const b0=new Date(block.start).getTime(),b1=new Date(block.end).getTime();starts=starts.flatMap(([a,z])=>b1<=a||b0>=z?[[a,z]]:[[a,Math.min(z,b0)],[Math.max(a,b1),z]].filter(([x,y])=>y>x))}for(const [a,z] of starts)result.push({start:new Date(a).toISOString(),end:new Date(z).toISOString()})}return result}
 function message(msg,hide=false){$('message').textContent=msg;$('message').hidden=hide}
-async function api(url,options={}){let response=await fetch(url,{credentials:'same-origin',...options});let data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error?.message||`Request failed (${response.status})`);return data}
+async function api(url, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfResponse = await fetch("/api/auth/csrf", {
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    const csrfData = await csrfResponse.json();
+    if (!csrfResponse.ok) {
+      throw new Error(csrfData.error?.message || "Could not prepare the request.");
+    }
+    headers.set("X-CSRF-Token", csrfData.csrf_token);
+  }
+  const response = await fetch(url, {
+    ...options,
+    credentials: "same-origin",
+    headers
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error?.message || `Request failed (${response.status})`);
+  }
+  return data;
+}
 function build(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
 function getItems(){return state.items.filter(x=>x.active!==false)}
 function selectedLocalTime(){return new Date(`${state.date}T${$('timeFilter').value}:00+05:30`).getTime()}
