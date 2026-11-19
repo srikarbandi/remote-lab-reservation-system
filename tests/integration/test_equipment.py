@@ -406,3 +406,170 @@ def test_velvet_os_reservation_form(client):
     assert b"bookingSubmit" in response.data
     assert b"/api/reservations" in response.data
     assert b"Idempotency-Key" in response.data
+
+
+def test_tc_f_004_search_term_too_long(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+
+    response = db_client.get(
+        "/api/equipment",
+        query_string={"name": "a" * 501},
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_FIELDS"
+
+def test_tc_f_005_inactive_equipment_has_no_available_slots(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+    day = future_monday()
+
+    db.execute(
+        """
+        INSERT INTO lab_opening_intervals
+        (lab_id, weekday, open_time, close_time)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (lab_id, day.weekday(), time(9), time(17))
+    )
+
+    db.execute(
+        "UPDATE equipment SET active = false WHERE id = %s",
+        (equipment_id,)
+    )
+
+    response = db_client.get(
+        f"/api/equipment/{equipment_id}/availability?date={day}",
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["active"] is False
+    assert data["available"] == []
+
+def test_tc_f_003_catalogue_filters_by_lab(db, db_client):
+    user_id, lab_id, equipment_id = setup_equipment(db)
+
+    response = db_client.get(
+        "/api/equipment",
+        query_string={"lab_id": str(lab_id)},
+        headers={"X-Test-User": str(user_id)}
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["total"] == 2
+    assert all(item["lab_id"] == str(lab_id) for item in data["items"])
+
+
+def test_tc_f_013_rejects_invalid_description(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    response = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC300",
+            "name": "Oscilloscope",
+            "description": "a" * 501
+        }
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_FIELDS"
+
+
+def test_tc_f_013_rejects_unknown_lab(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    response = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(uuid4()),
+            "code": "OSC301",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "LAB_NOT_FOUND"
+
+
+def test_tc_f_013_rejects_empty_equipment_update(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC302",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_FIELDS"
+
+def test_tc_f_013_rejects_invalid_updated_description(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC303",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={"description": "a" * 501}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_FIELDS"
+
+
+def test_tc_f_013_rejects_invalid_active_value(db, db_client):
+    admin_id, lab_id = setup_admin(db)
+
+    created = db_client.post(
+        "/api/equipment",
+        headers={"X-Test-User": str(admin_id)},
+        json={
+            "lab_id": str(lab_id),
+            "code": "OSC304",
+            "name": "Oscilloscope"
+        }
+    )
+
+    assert created.status_code == 201
+    equipment_id = created.get_json()["id"]
+
+    response = db_client.patch(
+        f"/api/equipment/{equipment_id}",
+        headers={"X-Test-User": str(admin_id)},
+        json={"active": "false"}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_FIELDS"
