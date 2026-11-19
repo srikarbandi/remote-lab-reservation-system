@@ -286,3 +286,27 @@ def test_tc_f_009_stale_reservation_version_returns_409(db_client, world, db):
 
     assert saved["status"] == "Approved"
     assert saved["version"] == 2
+
+def test_tc_f_006_booking_outside_opening_hours_returns_422(db_client, world, db):
+    future_start = datetime(2027, 1, 20, 3, 0, tzinfo=UTC)
+    future_end = future_start + H
+
+    add_weekly_opening(db, world.l1, future_start.weekday())
+
+    response = db_client.post(
+        "/api/reservations",
+        json={
+            "equipment_id": str(world.e1),
+            "start": future_start.isoformat(),
+            "end": future_end.isoformat(),
+            "purpose": "Outside opening hours test",
+        },
+        headers={
+            **as_user(world.student1),
+            "Idempotency-Key": "outside-opening-hours-test",
+        },
+    )
+
+    assert response.status_code == 422, response.get_json()
+    assert response.get_json()["error"]["code"] == "OUTSIDE_OPENING_HOURS"
+    assert count(db, "reservations") == 0
