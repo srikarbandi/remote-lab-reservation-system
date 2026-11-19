@@ -112,7 +112,8 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: one branch per task, pull r
 1. Implement a module and write its tests (case IDs match the STP, for example `TC-F-014`).
 2. Run the cases. Record each result in [`docs/test-execution/execution-register.csv`](docs/test-execution/execution-register.csv): status, build commit, tester, date, actual result, evidence link and defect ID.
 3. Log failures as GitHub issues using the bug template.
-4. When execution is finished, one person folds the results into the STP (actual results, metrics, deferrals, final test summary) and bumps its version.
+4. Generate the Unit, Code Coverage and Branch Coverage reports with `python scripts/test_reports.py` (needs `TEST_DATABASE_URL`). They are written to [`docs/reports/`](docs/reports/) from a real test run, so regenerate them after other modules are merged instead of editing them by hand.
+5. When execution is finished, one person folds the results into the STP (actual results, metrics, deferrals, final test summary) and bumps its version.
 
 Until a case has real evidence, its status stays `Not executed`. Do not record results that were not observed.
 
