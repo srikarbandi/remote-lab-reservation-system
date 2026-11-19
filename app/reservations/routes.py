@@ -64,15 +64,34 @@ def list_own_or_lab():
         total=result["total"], page=result["page"], page_size=result["page_size"],
     )
 
-
 @bp.post("/<uuid:reservation_id>/cancel")
 def cancel(reservation_id):
     actor_id = current_user_id()
     body = json_body()
-    check_fields(body, {"expected_version"})
-    expected_version = parse_int(body["expected_version"], "expected_version", minimum=1)
+    check_fields(body, {"expected_version"}, {"reason"})
+
+    expected_version = parse_int(
+        body["expected_version"], "expected_version", minimum=1
+    )
+    reason = (
+        clean_text(body["reason"], "reason")
+        if "reason" in body
+        else None
+    )
+
     with translate_db_errors(), connect() as conn:
         result = services.cancel_reservation(
-            conn, actor_id, reservation_id, expected_version, g.request_id
+            conn,
+            actor_id,
+            reservation_id,
+            expected_version,
+            g.request_id,
+            reason=reason,
         )
-    return jsonify({key: str(value) if key == "id" else value for key, value in result.items()})
+
+    return jsonify(
+        {
+            key: str(value) if key == "id" else value
+            for key, value in result.items()
+        }
+    )

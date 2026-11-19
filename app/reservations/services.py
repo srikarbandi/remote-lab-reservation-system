@@ -12,6 +12,7 @@ from app.common.locking import lock_equipment
 from app.common.permissions import ADMINISTRATOR, STUDENT, require_lab_role
 from app.notifications.services import (
     CANCELLED,
+    MAINTENANCE_CANCELLED,
     SUBMITTED,
     build_message,
     create_notification,
@@ -421,6 +422,7 @@ def cancel_reservation(
     reservation_id,
     expected_version,
     request_id=None,
+    reason=None,
 ):
     with conn.transaction():
         found = conn.execute(
@@ -435,6 +437,7 @@ def cancel_reservation(
                 "The reservation does not exist.",
             )
 
+        # Always lock the equipment before locking the reservation.
         equipment = lock_equipment(conn, found["equipment_id"])
 
         reservation = conn.execute(
@@ -449,19 +452,37 @@ def cancel_reservation(
                 "The reservation does not exist.",
             )
 
-        if reservation["student_id"] != actor_id:
-            raise ApiError(
-                403,
-                "FORBIDDEN",
-                "You can only cancel your own reservations.",
+        is_admin_cancellation = reservation["student_id"] != actor_id
+
+        if is_admin_cancellation:
+            require_lab_role(
+                conn,
+                actor_id,
+                equipment["lab_id"],
+                {ADMINISTRATOR},
             )
 
-        require_lab_role(
-            conn,
-            actor_id,
-            equipment["lab_id"],
-            {STUDENT},
-        )
+            if not isinstance(reason, str) or not reason.strip():
+                raise ApiError(
+                    422,
+                    "INVALID_FIELDS",
+                    "A cancellation reason is required.",
+                    fields={
+                        "reason": "This field is required when an administrator cancels."
+                    },
+                )
+
+            reason = reason.strip()
+            event_type = MAINTENANCE_CANCELLED
+
+        else:
+            require_lab_role(
+                conn,
+                actor_id,
+                equipment["lab_id"],
+                {STUDENT},
+            )
+            event_type = CANCELLED
 
         if reservation["version"] != expected_version:
             raise ApiError(
@@ -488,12 +509,26 @@ def cancel_reservation(
             """
             UPDATE reservations
             SET status = 'Cancelled',
+                decision_reason = CASE
+                    WHEN %s THEN %s
+                    ELSE decision_reason
+                END,
+                decided_by = CASE
+                    WHEN %s THEN %s
+                    ELSE decided_by
+                END,
                 version = version + 1,
                 updated_at = now()
             WHERE id = %s
             RETURNING id, status, version
             """,
-            (reservation_id,),
+            (
+                is_admin_cancellation,
+                reason,
+                is_admin_cancellation,
+                actor_id,
+                reservation_id,
+            ),
         ).fetchone()
 
         lab = conn.execute(
@@ -502,17 +537,19 @@ def cancel_reservation(
         ).fetchone()
 
         message = build_message(
-            CANCELLED,
+            event_type,
             equipment["name"],
             reservation["starts_at"],
             reservation["ends_at"],
-            timezone_name=lab["timezone"],
+            reason if is_admin_cancellation else None,
+            lab["timezone"],
         )
 
+        # Notify the student whose reservation was cancelled.
         create_notification(
             conn,
-            actor_id,
-            CANCELLED,
+            reservation["student_id"],
+            event_type,
             message,
             reservation_id,
         )
