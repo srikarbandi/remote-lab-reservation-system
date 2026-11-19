@@ -66,14 +66,30 @@ def connection_parts(url: str) -> dict:
     return {k: v for k, v in conninfo_to_dict(url).items() if v not in (None, "")}
 
 
+def resolve_tool(tool: str) -> str | None:
+    """Locate a PostgreSQL client binary.
+
+    The client major version must match the server: a newer pg_dump writes settings the older
+    server cannot restore (PostgreSQL 17's pg_dump emits ``transaction_timeout``, which a
+    PostgreSQL 16 server rejects). Set LAB_PG_BIN_DIR to pin an exact client directory, e.g.
+    ``/usr/lib/postgresql/16/bin``; otherwise the first match on PATH is used.
+    """
+    bin_dir = os.environ.get("LAB_PG_BIN_DIR")
+    if bin_dir:
+        candidate = Path(bin_dir) / tool
+        if candidate.exists():
+            return str(candidate)
+    return shutil.which(tool)
+
+
 def pg_command(tool: str, parts: dict, *args: str) -> tuple[list[str], dict]:
     """Build a PostgreSQL client command line and environment.
 
     The password goes in PGPASSWORD, not on the command line, so it is not visible in `ps`.
     """
-    path = shutil.which(tool)
+    path = resolve_tool(tool)
     if path is None:
-        raise BackupError(f"{tool} was not found on PATH. Install the PostgreSQL client tools (version 16).")
+        raise BackupError(f"{tool} was not found. Install the PostgreSQL client tools (version 16).")
     command = [path]
     for flag, key in (("--host", "host"), ("--port", "port"), ("--username", "user")):
         if key in parts:
@@ -93,7 +109,7 @@ def run_pg(tool: str, parts: dict, *args: str) -> str:
 
 
 def tool_version(tool: str) -> str:
-    path = shutil.which(tool)
+    path = resolve_tool(tool)
     if path is None:
         return "not found"
     return subprocess.run([path, "--version"], capture_output=True, text=True).stdout.strip()
