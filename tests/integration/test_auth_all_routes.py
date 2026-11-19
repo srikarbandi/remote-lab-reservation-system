@@ -125,7 +125,7 @@ def test_api_writes_reject_missing_csrf_with_real_session(route_app):
     failures = []
     checked = 0
 
-    for method, url, endpoint in api_routes(route_app):
+    for method, url, _endpoint in api_routes(route_app):
         if method not in UNSAFE_METHODS:
             continue
 
