@@ -1,0 +1,590 @@
+#!/usr/bin/env python3
+"""Generate the Part 3 test reports (Markdown) from a real pytest run.
+
+Writes three files into docs/reports/ (or --out):
+    unit-test-report.md, code-coverage-report.md, branch-coverage-report.md
+
+The numbers come from one pytest run with branch coverage, so they are always
+measured, never typed in. Run it from the repo root with a PostgreSQL database
+available, because the integration tests are part of the result:
+
+    export TEST_DATABASE_URL=postgresql://lab:lab@localhost:5432/lab_test
+    python scripts/test_reports.py
+
+If any test is skipped (for example no database) the script refuses to write
+reports unless --allow-skips is given, so a half-run cannot look like a full one.
+The System Validation Report is not generated here: it records what was executed
+against the STP cases and lives in docs/test-execution/.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import platform
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from datetime import datetime, timezone
+from importlib import metadata
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TC_PATTERN = re.compile(r"^test_(tc_[a-z]+_\d+)_")
+
+
+# ----------------------------------------------------------------------------- helpers
+
+
+def run(cmd, **kwargs):
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, **kwargs)
+
+
+def pct(part, whole):
+    return "n/a" if whole == 0 else f"{100 * part / whole:.1f}%"
+
+
+def table(headers, rows):
+    lines = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
+    lines += ["| " + " | ".join(str(cell) for cell in row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
+def ranges(numbers):
+    """[1, 2, 3, 7] -> '1-3, 7'."""
+    out, nums = [], sorted(numbers)
+    i = 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        out.append(str(nums[i]) if i == j else f"{nums[i]}-{nums[j]}")
+        i = j + 1
+    return ", ".join(out)
+
+
+def source_line(rel_path, number):
+    try:
+        return (ROOT / rel_path).read_text().splitlines()[number - 1].strip()
+    except (OSError, IndexError):
+        return ""
+
+
+def code(text):
+    return "`" + text.replace("`", "'").replace("|", "\\|") + "`" if text else ""
+
+
+def case_label(tag):
+    return tag.upper().replace("_", "-")
+
+
+def case_titles():
+    path = ROOT / "docs" / "test-execution" / "execution-register.csv"
+    if not path.exists():
+        return {}
+    with path.open(newline="") as handle:
+        return {row["case_id"]: row["title"] for row in csv.DictReader(handle)}
+
+
+# ----------------------------------------------------------------------------- environment
+
+
+def environment(out_dir):
+    def version(package):
+        try:
+            return metadata.version(package)
+        except metadata.PackageNotFoundError:
+            return "not installed"
+
+    sha = run(["git", "rev-parse", "--short=7", "HEAD"]).stdout.strip() or "unknown"
+    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() or "unknown"
+    dirty = bool(run(["git", "status", "--porcelain", "--", ".", f":(exclude){out_dir}"]).stdout.strip())
+    db = "not available"
+    url = os.environ.get("TEST_DATABASE_URL")
+    if url:
+        try:
+            import psycopg
+
+            with psycopg.connect(url) as conn:
+                server = conn.execute("SHOW server_version").fetchone()[0]
+                encoding = conn.execute("SHOW server_encoding").fetchone()[0]
+            db = f"PostgreSQL {server} ({encoding})"
+        except Exception as exc:  # noqa: BLE001 - report the reason instead of failing the run
+            db = f"unreachable ({type(exc).__name__})"
+    return {
+        "commit": sha + (" (uncommitted changes present)" if dirty else ""),
+        "branch": branch,
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "pytest": version("pytest"),
+        "pytest-cov": version("pytest-cov"),
+        "coverage": version("coverage"),
+        "database": db,
+    }
+
+
+def interim_banner(facts):
+    stubs = [f"`{name}`" for name, info in facts.items() if info["status"].startswith("Stub")]
+    if not stubs:
+        return ""
+    return (
+        f"> **Interim report.** {len(stubs)} of {len(facts)} application modules are still stubs "
+        f"({', '.join(stubs)}). These figures describe the code that exists on the commit below and "
+        "must be regenerated after those modules are merged.\n\n"
+    )
+
+
+def header(title, env, facts):
+    return (
+        f"# {title}\n\n"
+        "Team 16, Remote Laboratory Equipment Reservation System. Generated by `scripts/test_reports.py` "
+        "from a real test run; do not edit by hand.\n\n"
+        + interim_banner(facts)
+        + table(
+            ["Item", "Value"],
+            [
+                ["Generated", env["generated"]],
+                ["Branch and commit measured", f"`{env['branch']}` @ `{env['commit']}`"],
+                ["Python / pytest / coverage", f"{env['python']} / {env['pytest']} / {env['coverage']}"],
+                ["Database", env["database"]],
+                ["Platform", env["platform"]],
+            ],
+        )
+        + "\n"
+    )
+
+
+# ----------------------------------------------------------------------------- test run
+
+
+def run_tests(tmp):
+    junit = tmp / "junit.xml"
+    cov_json = tmp / "coverage.json"
+    env = dict(os.environ, COVERAGE_FILE=str(tmp / ".coverage"))
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            f"--junitxml={junit}",
+            "--cov=app",
+            "--cov-branch",
+            f"--cov-report=json:{cov_json}",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return proc, junit, cov_json
+
+
+def parse_junit(path):
+    tests = []
+    for case in ET.parse(path).getroot().iter("testcase"):
+        classname, name = case.get("classname", ""), case.get("name", "")
+        outcome, detail = "passed", ""
+        for tag in ("failure", "error", "skipped"):
+            node = case.find(tag)
+            if node is not None:
+                outcome = "failed" if tag in ("failure", "error") else "skipped"
+                detail = (
+                    (node.get("message") or "").strip().splitlines()[0][:200] if node.get("message") else ""
+                )
+        base = name.split("[")[0]
+        match = TC_PATTERN.match(base)
+        tests.append(
+            {
+                "file": classname.replace(".", "/") + ".py",
+                "name": name,
+                "time": float(case.get("time", 0) or 0),
+                "outcome": outcome,
+                "detail": detail,
+                "case": case_label(match.group(1)) if match else None,
+                "level": "Integration (PostgreSQL)" if classname.startswith("tests.integration") else "Unit",
+            }
+        )
+    return tests
+
+
+def count(tests, outcome):
+    return sum(1 for t in tests if t["outcome"] == outcome)
+
+
+# ----------------------------------------------------------------------------- module facts
+
+
+def module_facts():
+    """Per app module: owner (from its docstring) and whether it is still a stub."""
+    facts = {}
+    for directory in sorted(p for p in (ROOT / "app").iterdir() if p.is_dir() and p.name != "__pycache__"):
+        text = "\n".join(f.read_text() for f in sorted(directory.glob("*.py")))
+        owner = re.search(r"Owner(?: \(proposed\))?:\s*([^\n.]+)", text)
+        stub = "TODO: implement" in text
+        agreed = "Shared (owner to be agreed)" if directory.name == "audit" else "Shared"
+        facts[directory.name] = {
+            "owner": owner.group(1).strip() if owner else agreed,
+            "status": "Stub, nothing implemented yet" if stub else "Implemented",
+        }
+    return facts
+
+
+def module_of(rel_path):
+    parts = Path(rel_path).parts
+    return parts[1] if len(parts) > 2 else "(app core)"
+
+
+def stub_note(facts):
+    stubs = [
+        f"`{name}` ({info['owner']})" for name, info in facts.items() if info["status"].startswith("Stub")
+    ]
+    if not stubs:
+        return ""
+    return (
+        "Modules that are still stubs and therefore contribute almost nothing to these numbers: "
+        + ", ".join(stubs)
+        + ". The figures describe the code that exists today, not the finished system."
+    )
+
+
+# ----------------------------------------------------------------------------- reports
+
+
+def unit_report(env, tests, titles, facts):
+    total = len(tests)
+    lines = [header("Unit Test Report", env, facts)]
+    lines.append("## Summary\n")
+    lines.append(
+        table(
+            ["Level", "Tests", "Passed", "Failed", "Skipped", "Time (s)"],
+            [
+                [
+                    level,
+                    len(group),
+                    count(group, "passed"),
+                    count(group, "failed"),
+                    count(group, "skipped"),
+                    f"{sum(t['time'] for t in group):.1f}",
+                ]
+                for level in ("Unit", "Integration (PostgreSQL)")
+                for group in [[t for t in tests if t["level"] == level]]
+            ]
+            + [
+                [
+                    "**Total**",
+                    f"**{total}**",
+                    f"**{count(tests, 'passed')}**",
+                    f"**{count(tests, 'failed')}**",
+                    f"**{count(tests, 'skipped')}**",
+                    f"**{sum(t['time'] for t in tests):.1f}**",
+                ]
+            ],
+        )
+    )
+    lines.append(
+        "\n*Unit* tests (`tests/*.py`) need no database: overlap rules, validation helpers, usage rules and the "
+        "utilization maths. *Integration* tests (`tests/integration/`) run the services and HTTP routes against a "
+        "real PostgreSQL schema, including concurrent connections. Both levels are automated and both are in the "
+        "totals above.\n"
+    )
+    lines.append("## Results by test file\n")
+    by_file = defaultdict(list)
+    for t in tests:
+        by_file[t["file"]].append(t)
+    lines.append(
+        table(
+            ["File", "Level", "Tests", "Passed", "Failed", "Skipped"],
+            [
+                [
+                    f"`{name}`",
+                    group[0]["level"],
+                    len(group),
+                    count(group, "passed"),
+                    count(group, "failed"),
+                    count(group, "skipped"),
+                ]
+                for name, group in sorted(by_file.items())
+            ],
+        )
+    )
+    lines.append("\n## Results by STP case\n")
+    by_case = defaultdict(list)
+    for t in tests:
+        if t["case"]:
+            by_case[t["case"]].append(t)
+    lines.append(
+        table(
+            ["STP case", "Title", "Automated tests", "Passed", "Failed", "Skipped"],
+            [
+                [
+                    case,
+                    titles.get(case, ""),
+                    len(group),
+                    count(group, "passed"),
+                    count(group, "failed"),
+                    count(group, "skipped"),
+                ]
+                for case, group in sorted(by_case.items())
+            ],
+        )
+    )
+    lines.append(
+        "\nAutomated tests are evidence for an STP case but do not by themselves mark it executed. A case counts as "
+        "executed only when its steps were run as written and the result was recorded in "
+        "`docs/test-execution/execution-register.csv`.\n"
+    )
+    untagged = [t for t in tests if not t["case"]]
+    lines.append("## Tests with no STP case yet\n")
+    if untagged:
+        lines.append(table(["Test", "File"], [[code(t["name"]), f"`{t['file']}`"] for t in untagged]))
+        lines.append("")
+    else:
+        lines.append("None.\n")
+    lines.append("## Failures and skips\n")
+    problems = [t for t in tests if t["outcome"] != "passed"]
+    if problems:
+        lines.append(
+            table(
+                ["Test", "Outcome", "Detail"],
+                [[code(t["name"]), t["outcome"], code(t["detail"])] for t in problems],
+            )
+        )
+        lines.append("")
+    else:
+        lines.append("No test failed and none was skipped in this run.\n")
+    lines.append("## Scope and limits\n")
+    lines.append(
+        "- Authentication is replaced by a test-only `X-Test-User` header, so these results say nothing about "
+        "login, sessions, CSRF or login throttling.\n"
+        "- TC-EDGE-003 is checked against a reference booking function inside the test file, not against the real "
+        "booking module, which does not exist yet.\n"
+        "- No test drives a browser; there is no UI in the repository yet.\n"
+        + (f"- {stub_note(facts)}\n" if stub_note(facts) else "")
+    )
+    lines.append("## How to reproduce\n")
+    lines.append(
+        "```bash\npip install -r requirements-dev.txt\n"
+        "export TEST_DATABASE_URL=postgresql://lab:lab@localhost:5432/lab_test\n"
+        "python scripts/test_reports.py\n```\n"
+    )
+    return "\n".join(lines)
+
+
+def coverage_report(env, cov, facts):
+    totals, files = cov["totals"], cov["files"]
+    lines = [header("Code Coverage Report (line coverage)", env, facts)]
+    lines.append("## Summary\n")
+    lines.append(
+        table(
+            ["Measure", "Value"],
+            [
+                ["Statements measured", totals["num_statements"]],
+                ["Statements executed by the tests", totals["covered_lines"]],
+                ["Statements not executed", totals["missing_lines"]],
+                ["**Line coverage**", f"**{pct(totals['covered_lines'], totals['num_statements'])}**"],
+            ],
+        )
+    )
+    lines.append(
+        "\nLine coverage is executed statements divided by all statements in `app/`. Branch coverage is in the Branch Coverage Report.\n"
+    )
+    lines.append("## By module\n")
+    modules = defaultdict(lambda: [0, 0])
+    for rel, data in files.items():
+        modules[module_of(rel)][0] += data["summary"]["num_statements"]
+        modules[module_of(rel)][1] += data["summary"]["covered_lines"]
+    rows = []
+    for name, (stmts, covered) in sorted(modules.items()):
+        info = facts.get(name, {"owner": "Shared", "status": "Implemented"})
+        rows.append(
+            [
+                f"`{name}`",
+                info["owner"],
+                info["status"],
+                stmts,
+                covered,
+                "n/a (stub)" if info["status"].startswith("Stub") else pct(covered, stmts),
+            ]
+        )
+    lines.append(table(["Module", "Owner", "Status", "Statements", "Executed", "Line coverage"], rows))
+    lines.append("\n## By file\n")
+    rows = []
+    for rel, data in sorted(files.items()):
+        s = data["summary"]
+        if s["num_statements"] == 0:
+            continue
+        rows.append(
+            [
+                f"`{rel}`",
+                s["num_statements"],
+                s["covered_lines"],
+                s["missing_lines"],
+                pct(s["covered_lines"], s["num_statements"]),
+            ]
+        )
+    lines.append(table(["File", "Statements", "Executed", "Missing", "Line coverage"], rows))
+    lines.append(
+        "\nEmpty `__init__.py` and docstring-only files have no statements and are left out of this table.\n"
+    )
+    lines.append("## Lines not executed\n")
+    gaps = [(rel, data["missing_lines"]) for rel, data in sorted(files.items()) if data["missing_lines"]]
+    if gaps:
+        rows = [
+            [f"`{rel}`", number, code(source_line(rel, number))]
+            for rel, missing in gaps
+            for number in missing
+        ]
+        lines.append(table(["File", "Line", "Code"], rows))
+        lines.append("")
+    else:
+        lines.append("Every statement was executed.\n")
+    lines.append("## Scope and limits\n")
+    lines.append(
+        "- Coverage shows which statements ran, not that they were checked well; each test also asserts behaviour.\n"
+        + (f"- {stub_note(facts)}\n" if stub_note(facts) else "")
+    )
+    lines.append("## How to reproduce\n")
+    lines.append("```bash\npython scripts/test_reports.py\n```\n")
+    return "\n".join(lines)
+
+
+def branch_report(env, cov, facts):
+    totals, files = cov["totals"], cov["files"]
+    lines = [header("Branch Coverage Report", env, facts)]
+    lines.append("## Summary\n")
+    lines.append(
+        table(
+            ["Measure", "Value"],
+            [
+                ["Branches measured", totals["num_branches"]],
+                ["Branches taken by the tests", totals["covered_branches"]],
+                ["Branches never taken", totals["missing_branches"]],
+                ["Statements with a branch not taken (partial)", totals["num_partial_branches"]],
+                ["**Branch coverage**", f"**{pct(totals['covered_branches'], totals['num_branches'])}**"],
+            ],
+        )
+    )
+    lines.append(
+        "\nA branch is one outcome of a decision, such as the true and false sides of an `if` or the loop-entered and "
+        "loop-skipped paths of a `for`. Branch coverage is branches taken divided by all branches in `app/`.\n"
+    )
+    lines.append("## By module\n")
+    modules = defaultdict(lambda: [0, 0])
+    for rel, data in files.items():
+        modules[module_of(rel)][0] += data["summary"]["num_branches"]
+        modules[module_of(rel)][1] += data["summary"]["covered_branches"]
+    rows = []
+    for name, (branches, covered) in sorted(modules.items()):
+        info = facts.get(name, {"owner": "Shared", "status": "Implemented"})
+        rows.append(
+            [
+                f"`{name}`",
+                info["owner"],
+                info["status"],
+                branches,
+                covered,
+                "n/a (stub)"
+                if info["status"].startswith("Stub")
+                else pct(covered, branches)
+                if branches
+                else "n/a",
+            ]
+        )
+    lines.append(table(["Module", "Owner", "Status", "Branches", "Taken", "Branch coverage"], rows))
+    lines.append("\n## By file\n")
+    rows = []
+    for rel, data in sorted(files.items()):
+        s = data["summary"]
+        if s["num_branches"] == 0:
+            continue
+        rows.append(
+            [
+                f"`{rel}`",
+                s["num_branches"],
+                s["covered_branches"],
+                s["missing_branches"],
+                pct(s["covered_branches"], s["num_branches"]),
+            ]
+        )
+    lines.append(table(["File", "Branches", "Taken", "Not taken", "Branch coverage"], rows))
+    lines.append("\nFiles with no decisions have no branches and are left out of this table.\n")
+    lines.append("## Branches never taken\n")
+    rows = []
+    for rel, data in sorted(files.items()):
+        for origin, target in data.get("missing_branches", []):
+            where = "exit of the enclosing function" if target < 0 else f"line {target}"
+            rows.append([f"`{rel}`", origin, where, code(source_line(rel, origin))])
+    if rows:
+        lines.append(table(["File", "Decision at line", "Jump to", "Code at the decision"], rows))
+        lines.append("")
+    else:
+        lines.append("Every branch was taken.\n")
+    lines.append("## Scope and limits\n")
+    lines.append(
+        "- Branches are measured per statement by `coverage.py` with `--cov-branch`; compound conditions such as "
+        "`a and b` count as one decision.\n" + (f"- {stub_note(facts)}\n" if stub_note(facts) else "")
+    )
+    lines.append("## How to reproduce\n")
+    lines.append("```bash\npython scripts/test_reports.py\n```\n")
+    return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------------- main
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--out", default="docs/reports", help="output directory (default: docs/reports)")
+    parser.add_argument(
+        "--allow-skips", action="store_true", help="write reports even if some tests were skipped"
+    )
+    args = parser.parse_args()
+
+    if not os.environ.get("TEST_DATABASE_URL") and not args.allow_skips:
+        sys.exit(
+            "TEST_DATABASE_URL is not set, so the integration tests would be skipped. Set it, or pass --allow-skips."
+        )
+
+    env = environment(args.out)
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, junit, cov_json = run_tests(Path(tmp))
+        if not junit.exists() or not cov_json.exists():
+            sys.exit("pytest did not produce results:\n" + proc.stdout[-2000:] + proc.stderr[-2000:])
+        tests = parse_junit(junit)
+        cov = json.loads(cov_json.read_text())
+
+    skipped = count(tests, "skipped")
+    if skipped and not args.allow_skips:
+        sys.exit(
+            f"{skipped} test(s) were skipped, so the reports would understate the suite. Fix the cause or pass --allow-skips."
+        )
+
+    facts = module_facts()
+    out = ROOT / args.out
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "unit-test-report.md").write_text(unit_report(env, tests, case_titles(), facts))
+    (out / "code-coverage-report.md").write_text(coverage_report(env, cov, facts))
+    (out / "branch-coverage-report.md").write_text(branch_report(env, cov, facts))
+
+    totals = cov["totals"]
+    print(
+        f"{len(tests)} tests: {count(tests, 'passed')} passed, {count(tests, 'failed')} failed, {skipped} skipped | "
+        f"lines {pct(totals['covered_lines'], totals['num_statements'])} | "
+        f"branches {pct(totals['covered_branches'], totals['num_branches'])} | wrote {args.out}/"
+    )
+    sys.exit(0 if count(tests, "failed") == 0 and proc.returncode == 0 else 1)
+
+
+if __name__ == "__main__":
+    main()
