@@ -1,6 +1,7 @@
 """End-to-end HTTP checks (JSON in, JSON out) with a real database behind the routes."""
 
 from datetime import datetime, timedelta, timezone
+from urllib import response
 
 import pytest
 from lab_factories import add_reservation, add_weekly_opening, count, seed_world
@@ -191,3 +192,38 @@ def test_tc_f_014_delete_accepts_expected_version_in_the_json_body(db_client, wo
     )
     assert removed.status_code == 204 and removed.data == b""
     assert count(db, "maintenance_blocks") == 0
+
+
+
+def test_tc_f_006_overlapping_booking_returns_409(db_client, world, db):
+    future_start = datetime(2027, 1, 20, 4, 30, tzinfo=UTC)
+    future_end = future_start + 2 * H
+
+    add_weekly_opening(db, world.l1, future_start.weekday())
+
+    add_reservation(
+        db,
+        world.student1,
+        world.e1,
+        future_start,
+        future_end,
+        "Approved",
+    )
+
+    response = db_client.post(
+        "/api/reservations",
+        json={
+            "equipment_id": str(world.e1),
+            "start": future_start.isoformat(),
+            "end": future_end.isoformat(),
+            "purpose": "Another booking",
+        },
+        headers={
+            **as_user(world.student2),
+            "Idempotency-Key": "conflict-test-student-2",
+        },
+    )
+
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["error"]["code"] == "SLOT_CONFLICT"
+
