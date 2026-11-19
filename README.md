@@ -13,8 +13,9 @@ A web application that lets students view and reserve laboratory equipment and t
 | SRS (requirements) | Written, v1.0. Faculty approval pending |
 | SAD (architecture and design) | Written, v1.1. Faculty approval pending |
 | STP (test plan) | Written, v1.0, 37 planned test cases. Approval pending |
-| Application | **Not implemented yet.** `app/` is a skeleton with one stub per module |
-| Test execution | **Not started.** Every case in the execution register is `Not executed` |
+| Application | **Implemented.** Auth & accounts, equipment catalogue & availability, reservations & approvals, and maintenance/usage/reporting/notifications are built and merged on `main` |
+| Automated tests | **290 passing, 0 failed.** 90.7% line / 78.2% branch coverage. Reports in [`docs/reports/`](docs/reports/) |
+| STP execution | 4 of 37 cases executed as system cases (TC-F-014–017, all **Pass**); the remaining 33 are supported by automated tests but not yet run as formal STP system cases. See [`docs/reports/system-validation-report.md`](docs/reports/system-validation-report.md) |
 
 The booking policies and numeric targets in the documents are proposals pending faculty review. If a policy changes, the SRS, SAD and STP must be updated together.
 
@@ -101,7 +102,7 @@ tests/               pytest suites
 .github/             CI workflow, PR and issue templates
 ```
 
-Each module has `routes.py` and `services.py` stubs whose docstrings list the endpoints and requirement IDs to implement.
+Each module has `routes.py` (HTTP endpoints) and `services.py` (business logic and database access). All modules are implemented; the docstrings cite the requirement IDs each one satisfies.
 
 ## How we work
 
@@ -119,13 +120,13 @@ Until a case has real evidence, its status stays `Not executed`. Do not record r
 
 ## Roadmap
 
-- [ ] Agree and finalize `db/schema.sql` as a team
-- [ ] Shared helpers: audit `record_event()` and notification creation, usable by every module
-- [ ] Auth and sessions (Spoorthy)
-- [ ] Equipment and availability (Shristi)
-- [ ] Reservations and approvals (Soha)
-- [ ] Maintenance, usage, reporting, notifications (Sreekar)
-- [ ] Integrated build and smoke test
-- [ ] Execute the STP cases and fill the execution register
-- [ ] Update the STP from the results and write the test summary
+- [x] Agree and finalize `db/schema.sql` as a team
+- [x] Shared helpers: audit `record_event()` and notification creation, usable by every module
+- [x] Auth and sessions (Spoorthy)
+- [x] Equipment and availability (Shristi)
+- [x] Reservations and approvals (Soha)
+- [x] Maintenance, usage, reporting, notifications (Sreekar)
+- [x] Integrated build and smoke test — CI green on `main`, 290 automated tests pass
+- [ ] Execute the STP cases and fill the execution register — **partial:** 4 of 37 run as system cases (TC-F-014–017, Pass); the rest are backed by automated tests but not yet run as formal STP cases
+- [ ] Update the STP `.docx` from the results and write the test summary
 - [ ] Faculty review
