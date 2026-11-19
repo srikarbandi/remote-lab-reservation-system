@@ -255,3 +255,34 @@ def test_tc_f_006_idempotency_key_replay_creates_one_reservation(db_client, worl
     assert second.status_code == 201, second.get_json()
     assert first.get_json()["id"] == second.get_json()["id"]
     assert count(db, "reservations") == 1
+
+def test_tc_f_009_stale_reservation_version_returns_409(db_client, world, db):
+    future_start = datetime(2027, 1, 20, 4, 30, tzinfo=UTC)
+    future_end = future_start + 2 * H
+
+    reservation_id = add_reservation(
+        db,
+        world.student1,
+        world.e1,
+        future_start,
+        future_end,
+        "Approved",
+        version=2,
+    )
+
+    response = db_client.post(
+        f"/api/reservations/{reservation_id}/cancel",
+        json={"expected_version": 1},
+        headers=as_user(world.student1),
+    )
+
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["error"]["code"] == "STALE_VERSION"
+
+    saved = db.execute(
+        "SELECT status, version FROM reservations WHERE id = %s",
+        (reservation_id,),
+    ).fetchone()
+
+    assert saved["status"] == "Approved"
+    assert saved["version"] == 2
