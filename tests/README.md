@@ -26,6 +26,11 @@ Layout, matching the STP test levels (STP section 5):
 | `integration/test_concurrency.py` | Integration, real concurrent connections | TC-EDGE-003 |
 | `integration/test_audit.py` | Integration | TC-F-019 (the shared `record_event` helper only) |
 | `integration/test_routes_http.py` | HTTP with a real database | TC-F-014 to TC-F-017 |
+| `integration/test_equipment.py` — catalogue | Integration | TC-F-003 |
+| `integration/test_equipment.py` — search | Integration | TC-F-004 |
+| `integration/test_equipment.py` — availability and related validation | Integration | TC-F-005 |
+| `integration/test_equipment.py` — administration and permission checks | Integration | TC-F-013 |
+| `integration/test_equipment.py` — Velvet OS rendering | HTTP smoke | STP mapping to be confirmed |
 
 These automated tests support the STP cases but do not by themselves mark them executed. The execution register (`docs/test-execution/execution-register.csv`) is updated only after the case is run as written in the STP, with evidence.
 

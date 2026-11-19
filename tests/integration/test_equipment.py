@@ -145,7 +145,7 @@ def test_tc_f_005_availability(db, db_client):
     assert len(data["maintenance"]) == 1
 
 
-def test_availability_requires_login(db_client):
+def test_tc_f_005_availability_requires_login(db_client):
     response = db_client.get(
         f"/api/equipment/{uuid4()}/availability?date={future_monday()}"
     )
@@ -153,7 +153,7 @@ def test_availability_requires_login(db_client):
     assert response.status_code == 401
 
 
-def test_availability_invalid_date(db, db_client):
+def test_tc_f_005_availability_invalid_date(db, db_client):
     user_id, lab_id, equipment_id = setup_equipment(db)
 
     response = db_client.get(
@@ -164,7 +164,7 @@ def test_availability_invalid_date(db, db_client):
     assert response.status_code == 422
 
 
-def test_availability_unknown_equipment(db, db_client):
+def test_tc_f_005_availability_unknown_equipment(db, db_client):
     user_id, lab_id, equipment_id = setup_equipment(db)
 
     response = db_client.get(
@@ -175,7 +175,7 @@ def test_availability_unknown_equipment(db, db_client):
     assert response.status_code == 404
 
 
-def test_availability_closed_override(db, db_client):
+def test_tc_f_005_availability_closed_override(db, db_client):
     user_id, lab_id, equipment_id = setup_equipment(db)
     day = future_monday()
 
@@ -251,7 +251,7 @@ def test_tc_f_013_admin_creates_equipment(db, db_client):
     assert response.get_json()["code"] == "OSC200"
 
 
-def test_duplicate_equipment_code(db, db_client):
+def test_tc_f_013_duplicate_equipment_code(db, db_client):
     admin_id, lab_id = setup_admin(db)
 
     payload = {
@@ -269,7 +269,7 @@ def test_duplicate_equipment_code(db, db_client):
     assert second.status_code == 409
 
 
-def test_admin_edits_equipment(db, db_client):
+def test_tc_f_013_admin_edits_equipment(db, db_client):
     admin_id, lab_id = setup_admin(db)
 
     created = db_client.post(
@@ -295,7 +295,7 @@ def test_admin_edits_equipment(db, db_client):
     assert response.get_json()["name"] == "Digital Oscilloscope"
 
 
-def test_admin_deactivates_free_equipment(db, db_client):
+def test_tc_f_013_admin_deactivates_free_equipment(db, db_client):
     admin_id, lab_id = setup_admin(db)
 
     created = db_client.post(
@@ -321,7 +321,7 @@ def test_admin_deactivates_free_equipment(db, db_client):
     assert response.get_json()["active"] is False
 
 
-def test_deactivation_with_pending_booking_is_blocked(db, db_client):
+def test_tc_f_013_deactivation_with_pending_booking_is_blocked(db, db_client):
     admin_id, lab_id = setup_admin(db)
 
     created = db_client.post(
@@ -359,7 +359,7 @@ def test_deactivation_with_pending_booking_is_blocked(db, db_client):
     assert response.get_json()["error"]["code"] == "ACTIVE_RESERVATIONS"
 
 
-def test_student_cannot_manage_equipment(db, db_client):
+def test_tc_f_013_student_cannot_manage_equipment(db, db_client):
     student_id, lab_id, equipment_id = setup_equipment(db)
 
     response = db_client.post(
@@ -375,7 +375,7 @@ def test_student_cannot_manage_equipment(db, db_client):
     assert response.status_code == 403
 
 
-def test_unauthenticated_equipment_create(db_client):
+def test_tc_f_013_unauthenticated_equipment_create(db_client):
     response = db_client.post(
         "/api/equipment",
         json={
