@@ -1,14 +1,18 @@
 """End-to-end HTTP checks (JSON in, JSON out) with a real database behind the routes."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from urllib import response
+from threading import Barrier
 
 import pytest
 from lab_factories import add_reservation, add_weekly_opening, count, seed_world
 
+from app.common.errors import ApiError
+from app.reservations import services as reservation_services
+
 UTC = timezone.utc
 H = timedelta(hours=1)
-START = datetime(2026, 10, 20, 4, 30, tzinfo=UTC)  # 10:00 IST
+START = datetime(2026, 10, 20, 4, 30, tzinfo=UTC)
 END = START + 2 * H
 
 
@@ -310,3 +314,48 @@ def test_tc_f_006_booking_outside_opening_hours_returns_422(db_client, world, db
     assert response.status_code == 422, response.get_json()
     assert response.get_json()["error"]["code"] == "OUTSIDE_OPENING_HOURS"
     assert count(db, "reservations") == 0
+
+def test_tc_f_007_concurrent_booking_only_one_succeeds(db, new_conn, world):
+    future_start = datetime(2027, 1, 20, 4, 30, tzinfo=UTC)
+    future_end = future_start + 2 * H
+
+    add_weekly_opening(db, world.l1, future_start.weekday())
+
+    barrier = Barrier(2)
+
+    def book(student_id, key):
+        conn = new_conn()
+        try:
+            barrier.wait()
+            result = reservation_services.create_reservation(
+                conn,
+                student_id,
+                world.e1,
+                future_start,
+                future_end,
+                "Concurrent booking test",
+                key,
+            )
+            return ("success", result)
+        except ApiError as exc:
+            return ("error", exc.status, exc.code)
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            book, world.student1, "concurrent-student-1"
+        )
+        second = executor.submit(
+            book, world.student2, "concurrent-student-2"
+        )
+
+        results = [first.result(), second.result()]
+
+    successes = [r for r in results if r[0] == "success"]
+    failures = [r for r in results if r[0] == "error"]
+
+    assert len(successes) == 1, results
+    assert len(failures) == 1, results
+    assert failures[0][1:] == (409, "SLOT_CONFLICT")
+    assert count(db, "reservations") == 1
