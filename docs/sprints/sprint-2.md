@@ -26,11 +26,11 @@ Reviews were done on GitHub across the team (e.g. Shristi approved #7/#8/#9 and 
 ## Results (measured on `0350441` — `main` plus the generator/review fixes)
 - **Automated tests:** 290 passed, 0 failed, 0 skipped.
 - **Coverage:** 90.7% line, 78.5% branch.
-- **STP system cases:** TC-F-014–017 all **Pass**, executed against the STP revision on `main` (`7b66d52`); the scenarios added in #17 are not yet re-run in these logs. TC-F-015 moved Fail → Pass after #15. With TC-F-002 and TC-SR-004 reconciled from recorded auth evidence, **6 of 37** cases are executed.
+- **STP system cases:** TC-F-014–017 all **Pass**, executed against the STP revision on `main` (`7b66d52`); the scenarios added in #17 are not yet re-run in these logs. TC-F-015 moved Fail → Pass after #15. With TC-F-002 and TC-SR-004 (auth evidence) and TC-NF-001, TC-NF-005, TC-EDGE-003, TC-EDGE-005, TC-EDGE-006 (tagged tests / system-run logs) reconciled, **11 of 37** cases are executed. TC-NF-002, TC-F-019 and TC-EDGE-007 are flagged as not executed with reasons.
 - **Reports:** Unit Test, System Validation, Code Coverage, Branch Coverage regenerated in [`docs/reports/`](../reports/).
 
 ## Not done / remaining
-- **STP execution is partial:** 6 of 37 cases executed; the other 31 are supported by the automated tests but not executed as STP system cases (no runners exist for TC-SR / TC-EDGE / TC-UAT and most TC-F cases). The System Validation Report lists them as `Not executed`.
+- **STP execution is partial:** 11 of 37 cases executed; the other 26 are supported by the automated tests but not executed as STP system cases. The System Validation Report lists them as `Not executed`.
 - **STP `.docx` not yet updated** from the results — the change list is in [`docs/test-execution/stp-change-list.md`](../test-execution/stp-change-list.md); one person applies it after pulling.
 - Four older commits on the testing PRs carry a different author email; left as-is (the register cites one as a build).
 
