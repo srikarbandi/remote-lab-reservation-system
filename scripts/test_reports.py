@@ -223,16 +223,33 @@ def count(tests, outcome):
 # ----------------------------------------------------------------------------- module facts
 
 
+MODULE_OWNERS = {
+    "auth": "Spoorthy M",
+    "equipment": "Shristi Shukla",
+    "reservations": "Soha Rafiq",
+    "approvals": "Soha Rafiq",
+    "maintenance": "Sreekar Bandi",
+    "usage": "Sreekar Bandi",
+    "reporting": "Sreekar Bandi",
+    "notifications": "Sreekar Bandi",
+}
+
+
 def module_facts():
-    """Per app module: owner (from its docstring) and whether it is still a stub."""
+    """Per app module: owner and whether it is still a stub."""
     facts = {}
     for directory in sorted(p for p in (ROOT / "app").iterdir() if p.is_dir() and p.name != "__pycache__"):
         text = "\n".join(f.read_text() for f in sorted(directory.glob("*.py")))
-        owner = re.search(r"Owner(?: \(proposed\))?:\s*([^\n.]+)", text)
+        docstring_owner = re.search(r"Owner(?: \(proposed\))?:\s*([^\n.]+)", text)
         stub = "TODO: implement" in text
-        agreed = "Shared (owner to be agreed)" if directory.name == "audit" else "Shared"
+        if directory.name in MODULE_OWNERS:
+            owner = MODULE_OWNERS[directory.name]
+        elif docstring_owner:
+            owner = docstring_owner.group(1).strip()
+        else:
+            owner = "Shared (foundation)"
         facts[directory.name] = {
-            "owner": owner.group(1).strip() if owner else agreed,
+            "owner": owner,
             "status": "Stub, nothing implemented yet" if stub else "Implemented",
         }
     return facts
@@ -363,11 +380,13 @@ def unit_report(env, tests, titles, facts):
         lines.append("No test failed and none was skipped in this run.\n")
     lines.append("## Scope and limits\n")
     lines.append(
-        "- Authentication is replaced by a test-only `X-Test-User` header, so these results say nothing about "
-        "login, sessions, CSRF or login throttling.\n"
+        "- The auth module's own unit and integration tests exercise real login, sessions and CSRF. The STP "
+        "system-case runner (`scripts/load_test_app.py`) logs in with a test-only `X-Test-User` header, so the "
+        "system-case runs do not exercise real login, sessions, CSRF or login throttling.\n"
         "- TC-EDGE-003 is checked against a reference booking function inside the test file, not against the real "
-        "booking module, which does not exist yet.\n"
-        "- No test drives a browser; there is no UI in the repository yet.\n"
+        "reservations module.\n"
+        "- No test drives a browser: there is no automated browser/UI testing in the suite (the Velvet OS "
+        "frontend is not exercised by automated tests).\n"
         + (f"- {stub_note(facts)}\n" if stub_note(facts) else "")
     )
     lines.append("## How to reproduce\n")

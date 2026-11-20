@@ -246,7 +246,9 @@ def render(rows: list[dict], generated: str, build: str, root: Path = ROOT) -> s
     add(
         "A case is executed only when its steps were run as written and the result recorded in the register "
         "(Pass or Fail). Blocked means a step needs something that does not exist yet; it is neither a "
-        "pass nor a fail. Automated unit and integration tests support a case but do not mark it executed."
+        "pass nor a fail. A case may be marked executed on the evidence of a recorded system run or a tagged "
+        "automated test only when that evidence performs the case's exact steps; a generally passing test "
+        "suite that does not cover a case's specific steps merely supports it and does not mark it executed."
     )
     add("")
     levels = sorted({row["level"] for row in rows})
@@ -304,8 +306,8 @@ def render(rows: list[dict], generated: str, build: str, root: Path = ROOT) -> s
     add("|---|---|---|---|---|---|---|---|")
     for row in rows:
         evidence = f"[log]({row['evidence_link']})" if row["evidence_link"].strip() else ""
-        # Links are relative to docs/reports/.
-        evidence = evidence.replace("](docs/", "](../")
+        # Links are relative to docs/reports/: docs/… is one level up, repo-root dirs (tests/…) two.
+        evidence = evidence.replace("](docs/", "](../").replace("](tests/", "](../../tests/")
         build_cell = f"`{row['build_commit']}`" if row["build_commit"].strip() else ""
         add(
             f"| {row['case_id']} | {_cell(row['title'])} | {row['level']} | {row['status']} | {build_cell} | "
