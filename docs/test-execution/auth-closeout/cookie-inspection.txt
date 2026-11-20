@@ -1,0 +1,7 @@
+﻿Browser cookie inspection on 20 November 2026
+Local HTTPS: https://127.0.0.1:5443
+lab_session: Secure=true; HttpOnly=true; SameSite=Lax
+lab_csrf: Secure=true; HttpOnly=true; SameSite=Lax
+HTTPS health: HTTP 200
+Plain HTTP on port 5443: connection reset
+Temporary self-signed development certificate; certificate trust not validated.
