@@ -408,6 +408,20 @@ def test_velvet_os_reservation_form(client):
     assert b"Idempotency-Key" in response.data
 
 
+def test_velvet_os_admin_approval_queue(client):
+    response = client.get("/api/equipment/ui")
+
+    assert response.status_code == 200
+    assert b'id="approvalLab"' in response.data
+    assert b'id="refreshApprovals"' in response.data
+    assert b'id="approvalList"' in response.data
+    assert b"scope=lab" in response.data
+    assert b"status=Pending" in response.data
+    assert b"expected_version:reservation.version" in response.data
+    assert b"/decision" in response.data
+    assert b"Enter a reason before rejecting." in response.data
+
+
 def test_tc_f_004_search_term_too_long(db, db_client):
     user_id, lab_id, equipment_id = setup_equipment(db)
 
