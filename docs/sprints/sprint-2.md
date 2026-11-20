@@ -23,14 +23,14 @@
 
 Reviews were done on GitHub across the team (e.g. Shristi approved #7/#8/#9 and #15; Spoorthy handled #3/#5/#6). The six stacked testing PRs were merged in dependency order with ordinary merge commits, preserving the real 11–13 Nov commit dates on `main`.
 
-## Results (measured on `main` @ `033ef2f`)
+## Results (measured on `0350441` — `main` plus the generator/review fixes)
 - **Automated tests:** 290 passed, 0 failed, 0 skipped.
-- **Coverage:** 90.7% line, 78.2% branch.
-- **STP system cases:** TC-F-014, TC-F-015, TC-F-016, TC-F-017 all **Pass**. TC-F-015 moved from Fail → Pass after #15.
+- **Coverage:** 90.7% line, 78.5% branch.
+- **STP system cases:** TC-F-014–017 all **Pass**, executed against the STP revision on `main` (`7b66d52`); the scenarios added in #17 are not yet re-run in these logs. TC-F-015 moved Fail → Pass after #15. With TC-F-002 and TC-SR-004 reconciled from recorded auth evidence, **6 of 37** cases are executed.
 - **Reports:** Unit Test, System Validation, Code Coverage, Branch Coverage regenerated in [`docs/reports/`](../reports/).
 
 ## Not done / remaining
-- **STP execution is partial:** 4 of 37 cases run as formal system cases; the other 33 are supported by the automated tests but not executed as STP system cases (no runners exist for TC-SR / TC-EDGE / TC-UAT and most TC-F cases). The System Validation Report lists them as `Not executed`.
+- **STP execution is partial:** 6 of 37 cases executed; the other 31 are supported by the automated tests but not executed as STP system cases (no runners exist for TC-SR / TC-EDGE / TC-UAT and most TC-F cases). The System Validation Report lists them as `Not executed`.
 - **STP `.docx` not yet updated** from the results — the change list is in [`docs/test-execution/stp-change-list.md`](../test-execution/stp-change-list.md); one person applies it after pulling.
 - Four older commits on the testing PRs carry a different author email; left as-is (the register cites one as a build).
 
