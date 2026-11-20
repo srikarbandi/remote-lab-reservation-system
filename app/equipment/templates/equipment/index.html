@@ -17,10 +17,10 @@
 <aside class="sidebar" aria-label="Main navigation">
   <div class="brand">velvet<span>.</span>os<small>LABORATORY WORKSPACE</small></div>
   <div><div class="side-label">WORKSPACE</div><nav class="nav" aria-label="Workspace sections">
-    <button type="button" class="active" data-view="board"><span class="glyph">▦</span>Flow Board</button>
-    <button type="button" data-view="collection"><span class="glyph">◇</span>Equipment</button>
-    <button type="button" data-view="schedule"><span class="glyph">▤</span>Calendar</button>
-    <button type="button" data-view="admin"><span class="glyph">⚙</span>Admin Tools</button>
+    <button type="button" class="active" data-view="board" aria-current="page"><span class="glyph" aria-hidden="true">▦</span>Flow Board</button>
+    <button type="button" data-view="collection"><span class="glyph" aria-hidden="true">◇</span>Equipment</button>
+    <button type="button" data-view="schedule"><span class="glyph" aria-hidden="true">▤</span>Calendar</button>
+    <button type="button" data-view="admin"><span class="glyph" aria-hidden="true">⚙</span>Admin Tools</button>
   </nav></div>
   <div class="side-footer">Designed for discovery.<br>Built for the laboratory.<br><span style="color:#9a869e">Remote Lab · Equipment & Availability</span></div>
 </aside>
@@ -43,16 +43,61 @@
         <div class="panel-heading"><div><div class="eyebrow">02 / PLAN</div><h2>Availability Calendar</h2></div><span class="tag">Live intervals</span></div>
         <div id="itemHeader" class="item-header"><div class="item-icon">◈</div><div><strong id="selectedName">Choose equipment</strong><p id="selectedMeta">Select a card on the Flow Board</p></div></div>
         <div class="calendar-head"><button type="button" class="iconbtn" id="prevMonth" aria-label="Previous month">‹</button><h3 id="monthTitle">Month</h3><button type="button" class="iconbtn" id="nextMonth" aria-label="Next month">›</button></div>
-        <div class="weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="calendar-grid" id="calendarGrid" aria-label="Select a calendar date"></div>
+        <div class="weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="calendar-grid" id="calendarGrid" role="group" aria-label="Select a calendar date"></div>
         <div class="slot-legend"><div class="legend"><span style="background:#528265"></span>Free</div><div class="legend"><span style="background:#a36684"></span>Reserved</div><div class="legend"><span style="background:#b19164"></span>Maintenance</div></div>
         <p class="muted" id="slotDateLabel">Select equipment to see opening hours and availability.</p><div class="slotlist" id="slotList"></div>
-        <div class="note" id="slotSummary">Select a free interval to highlight it. Booking requests are handled by the separate reservations module.</div>
+        <div class="note" id="slotSummary" role="status" aria-live="polite">Select a free interval to highlight it for booking.</div>
+        <div class="panel" style="margin-top:18px">
+            <h3>Request this equipment</h3>
+
+            <p class="muted">
+                Select a free future interval and enter your experiment purpose.
+            </p>
+
+            <form id="reservationForm">
+                <label for="bookingPurpose">Purpose of reservation</label>
+
+                <textarea
+                    id="bookingPurpose"
+                    rows="3"
+                    maxlength="500"
+                    required
+                    placeholder="Example: Testing a digital circuit"
+                    style="width:100%;margin:10px 0 14px"
+                ></textarea>
+
+                <button
+                    type="submit"
+                    class="primary"
+                    id="bookingSubmit"
+                >
+                    Submit Reservation Request
+                </button>
+            </form>
+
+            <p
+                class="muted"
+                id="bookingFeedback"
+                role="status"
+                aria-live="polite"
+            >
+                Select a free slot to continue.
+            </p>
+        </div>
+        <div class="panel" style="margin-top:18px" aria-labelledby="myReservationsTitle">
+            <h3 id="myReservationsTitle">My reservations</h3>
+            <p class="muted">Review your requests and cancel a Pending or Approved reservation using the keyboard.</p>
+            <button type="button" class="secondary" id="refreshReservations">Refresh my reservations</button>
+            <p id="reservationListStatus" role="status" aria-live="polite" class="muted">Sign in to load your reservations.</p>
+            <div id="myReservationsList" class="collection" aria-label="Your reservations"></div>
+        </div>
+
       </section>
     </div>
   </section>
   <section id="collectionView" class="view" aria-label="Equipment collection"><div class="eyebrow">COLLECTION / LABORATORY</div><h1>Equipment Library.</h1><p class="lead">Browse your laboratory's instruments and open their calendars.</p><div class="panel"><label for="collectionSearch">Search equipment</label><input type="search" id="collectionSearch" placeholder="Try oscilloscope…" style="margin-bottom:17px"><div class="collection" id="collectionGrid"></div></div></section>
   <section id="scheduleView" class="view" aria-label="Calendar view"><div class="eyebrow">TIME / AVAILABILITY</div><h1>The Calendar.</h1><p class="lead">Dates, intervals and equipment in one clear view.</p><div class="panel"><label for="scheduleEquipment">Equipment</label><select id="scheduleEquipment" style="margin-bottom:16px"></select><div class="calendar-head"><h2>Jump to your calendar</h2><button type="button" class="primary" id="openBoardCalendar">Open split calendar →</button></div><p class="muted">The split workspace keeps the equipment board and the calendar together. Choose equipment here to jump directly to it.</p></div></section>
-  <section id="adminView" class="view" aria-label="Administrator tools"><div class="eyebrow">MANAGE / AUTHORIZED USERS ONLY</div><h1>Equipment Studio.</h1><p class="lead">Add, edit or deactivate instruments with your laboratory administrator permissions.</p><div class="panel admin-panel"><p class="hint">These actions are protected by server-side lab role checks. The browser cannot determine your role until the team's authentication integration is complete. Preview mode never sends changes.</p><form id="adminForm"><div class="admin-grid"><div class="wide"><label for="editEquipment">Edit existing equipment (optional)</label><select id="editEquipment"><option value="">Add new equipment</option></select></div><div><label for="adminCode">Equipment code</label><input id="adminCode" maxlength="500" required></div><div><label for="adminName">Equipment name</label><input id="adminName" maxlength="500" required></div><div class="wide"><label for="adminLab">Lab UUID (required for new equipment)</label><input id="adminLab" placeholder="Existing laboratory UUID"></div><div class="wide"><label for="adminDescription">Description</label><textarea id="adminDescription" maxlength="500"></textarea></div></div><div class="admin-actions"><button class="primary" type="submit">Save equipment</button><button class="secondary" type="button" id="resetAdmin">Clear form</button><button class="danger" type="button" id="deactivateAdmin" hidden>Deactivate</button></div></form></div></section>
+  <section id="adminView" class="view" aria-label="Administrator tools"><div class="eyebrow">MANAGE / AUTHORIZED USERS ONLY</div><h1>Equipment Studio.</h1><p class="lead">Add, edit or deactivate instruments with your laboratory administrator permissions.</p><div class="panel admin-panel"><p class="hint">Equipment changes require a signed-in laboratory administrator. Preview mode never sends changes.</p><form id="adminForm"><div class="admin-grid"><div class="wide"><label for="editEquipment">Edit existing equipment (optional)</label><select id="editEquipment"><option value="">Add new equipment</option></select></div><div><label for="adminCode">Equipment code</label><input id="adminCode" maxlength="500" required></div><div><label for="adminName">Equipment name</label><input id="adminName" maxlength="500" required></div><div class="wide"><label for="adminLab">Lab UUID (required for new equipment)</label><input id="adminLab" placeholder="Existing laboratory UUID"></div><div class="wide"><label for="adminDescription">Description</label><textarea id="adminDescription" maxlength="500"></textarea></div></div><div class="admin-actions"><button class="primary" type="submit">Save equipment</button><button class="secondary" type="button" id="resetAdmin">Clear form</button><button class="danger" type="button" id="deactivateAdmin" hidden>Deactivate</button></div></form></div></section>
   <p id="previewInfo" style="margin-top:21px">All live availability and equipment data comes from the existing Flask API. Sample preview is clearly labeled and never writes to the database.</p>
 </main>
 </div>
@@ -106,13 +151,134 @@ function sameInterval(a,b){return a?.start===b?.start&&a?.end===b?.end}
 function slotSegments(result){const boundaries=[];for(const group of ['opening_hours','available','reserved','maintenance'])for(const i of result[group]||[])boundaries.push(new Date(i.start).getTime(),new Date(i.end).getTime());const ordered=[...new Set(boundaries)].sort((a,b)=>a-b);const chunks=[];for(let i=0;i<ordered.length-1;i++){const a=ordered[i],b=ordered[i+1];if(b<=a)continue;const t=a+Math.min(1000,(b-a)/2);const status=classify(result,t);if(status==='closed')continue;const piece={start:new Date(a).toISOString(),end:new Date(b).toISOString(),status};const last=chunks[chunks.length-1];if(last&&last.status===status&&last.end===piece.start)last.end=piece.end;else chunks.push(piece)}return chunks}
 async function renderSchedule(){renderCalendar();$('slotList').replaceChildren();state.slot=null;const item=state.selected;if(!item){$('slotDateLabel').textContent='Choose equipment from the Flow Board.';return}const key=`${item.id}|${state.date}`;let result=state.availability.get(key);if(!result){$('slotDateLabel').textContent='Loading availability…';try{result=state.demo?demoAvailability(item,state.date):await api(`/api/equipment/${encodeURIComponent(item.id)}/availability?date=${encodeURIComponent(state.date)}`);state.availability.set(key,result)}catch(err){$('slotDateLabel').textContent=err.message;return}}if(state.selected?.id!==item.id||state.date!==key.split('|')[1])return;const pieces=slotSegments(result);$('slotDateLabel').textContent=`${state.date} · ${result.opening_hours?.length?'Lab operating hours applied':'Lab closed / no opening hours'}`;if(!pieces.length){$('slotList').append(build('p','No open intervals for this date.','muted'));$('slotSummary').textContent='Choose an open date to view intervals.';return}for(const p of pieces){const b=build('button',undefined,`slot ${p.status}`);b.type='button';b.disabled=p.status!=='free';b.append(build('strong',`${displayTime(p.start)}–${displayTime(p.end)}`),build('span',p.status==='free'?'Free':p.status==='reserved'?'Reserved':'Maintenance'));b.onclick=()=>{state.slot=p;for(const el of $('slotList').children)el.classList.remove('selected');b.classList.add('selected');$('slotSummary').textContent=`Selected: ${item.name}, ${state.date}, ${displayTime(p.start)}–${displayTime(p.end)}. Booking submission is managed by the reservations module.`};$('slotList').append(b)}$('slotSummary').textContent='Choose a free interval to highlight it. Final booking submission requires the reservations module.'}
 function fillAdmin(id){const item=state.items.find(x=>x.id===id);$('adminCode').value=item?.code||'';$('adminName').value=item?.name||'';$('adminDescription').value=item?.description||'';$('adminLab').value=item?.lab_id||'';$('adminLab').readOnly=!!item;$('deactivateAdmin').hidden=!item}
-function switchView(name){for(const x of ['board','collection','schedule','admin'])$(x+'View').classList.toggle('active',x===name);for(const b of document.querySelectorAll('[data-view]'))b.classList.toggle('active',b.dataset.view===name);if(name==='collection')renderCollection()}
+function switchView(name){for(const x of ['board','collection','schedule','admin'])$(x+'View').classList.toggle('active',x===name);for(const b of document.querySelectorAll('[data-view]')){const active=b.dataset.view===name;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}if(name==='collection')renderCollection()}
 async function load(){const generation=++state.fetchGeneration;state.availability.clear();state.status.clear();message(state.demo?'Sample design preview. No live database changes.':'Loading equipment from Flask…');let items=[];try{if(state.demo){items=DEMO;state.total=DEMO.length}else{const response=await api('/api/equipment?page=1&page_size=24');items=response.items||[];state.total=response.total??items.length}if(generation!==state.fetchGeneration)return;state.items=items;state.selected=items.find(x=>x.id===state.selected?.id)||items[0]||null;$('totalCount').textContent=state.total;$('labCount').textContent=new Set(items.map(x=>x.lab_id)).size;renderSelects();if(state.selected)selection(state.selected);else{$('selectedName').textContent='No equipment loaded';$('selectedMeta').textContent='Add equipment or sign in';$('slotList').replaceChildren()}renderLanes();const jobs=items.map(item=>async()=>{try{const data=state.demo?demoAvailability(item,state.date):await api(`/api/equipment/${encodeURIComponent(item.id)}/availability?date=${encodeURIComponent(state.date)}`);if(generation===state.fetchGeneration)state.availability.set(`${item.id}|${state.date}`,data)}catch(e){}if(generation===state.fetchGeneration)renderLanes()});let cursor=0;await Promise.all(Array.from({length:Math.min(4,jobs.length)},async()=>{while(cursor<jobs.length){const job=jobs[cursor++];await job()}}));if(generation===state.fetchGeneration){await renderSchedule();message(state.demo?'PREVIEW MODE — sample data only. Add/edit/deactivate are disabled.':`Loaded ${items.length} of ${state.total} equipment items.`,false)}}catch(e){if(generation!==state.fetchGeneration)return;state.items=[];state.selected=null;renderSelects();renderLanes();$('totalCount').textContent='—';$('labCount').textContent='—';$('freeCount').textContent='—';message(`${e.message}. You can use “Preview sample design” to see the interface without login.`)}}
-async function changeDate(date){state.date=date;state.month=date.slice(0,7);$('boardDate').value=date;state.slot=null;await load()}
+async function changeDate(date){const fromCalendar=document.activeElement?.closest('#calendarGrid')!==null;state.date=date;state.month=date.slice(0,7);$('boardDate').value=date;state.slot=null;await load();if(fromCalendar){const selected=[...$('calendarGrid').querySelectorAll('button')].find(button=>button.getAttribute('aria-label')===date);selected?.focus()}}
 function setPreview(on){state.demo=on;$('modeLabel').textContent=on?'SAMPLE PREVIEW':'LIVE API';$('previewToggle').textContent=on?'Return to live API':'Preview sample design';$('previewToggle').setAttribute('aria-pressed',on?'true':'false');$('adminForm').querySelector('button[type=submit]').disabled=on;$('deactivateAdmin').disabled=on;load()}
 async function saveAdmin(event){event.preventDefault();if(state.demo){message('Sample preview never changes the database.');return}const id=$('editEquipment').value;const payload={code:$('adminCode').value.trim(),name:$('adminName').value.trim(),description:$('adminDescription').value.trim()};if(!id)payload.lab_id=$('adminLab').value.trim();try{const csrf=document.querySelector('meta[name="csrf-token"]')?.content;const headers={'Content-Type':'application/json'};if(csrf)headers['X-CSRF-Token']=csrf;await api(id?`/api/equipment/${encodeURIComponent(id)}`:'/api/equipment',{method:id?'PATCH':'POST',headers,body:JSON.stringify(payload)});message('Equipment saved successfully.');$('editEquipment').value='';fillAdmin('');await load()}catch(e){message(e.message)}}
 async function deactivate(){if(state.demo){message('Preview does not change equipment.');return}const id=$('editEquipment').value;if(!id||!window.confirm('Deactivate this equipment? Only equipment without held bookings can be deactivated.'))return;try{const csrf=document.querySelector('meta[name="csrf-token"]')?.content;const headers={'Content-Type':'application/json'};if(csrf)headers['X-CSRF-Token']=csrf;await api(`/api/equipment/${encodeURIComponent(id)}`,{method:'PATCH',headers,body:JSON.stringify({active:false})});message('Equipment deactivated.');$('editEquipment').value='';fillAdmin('');await load()}catch(e){message(e.message)}}
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>switchView(b.dataset.view));$('previewToggle').onclick=()=>setPreview(!state.demo);$('refreshBtn').onclick=load;$('boardDate').value=state.date;$('boardDate').onchange=e=>changeDate(e.target.value);$('timeFilter').onchange=renderLanes;$('labFilter').onchange=renderLanes;$('search').oninput=renderLanes;$('collectionSearch').oninput=renderCollection;$('prevMonth').onclick=()=>shiftMonth(-1);$('nextMonth').onclick=()=>shiftMonth(1);$('scheduleEquipment').onchange=e=>{const item=state.items.find(x=>x.id===e.target.value);if(item){selection(item);switchView('board');renderLanes()}};$('openBoardCalendar').onclick=()=>switchView('board');$('editEquipment').onchange=e=>fillAdmin(e.target.value);$('adminForm').onsubmit=saveAdmin;$('resetAdmin').onclick=()=>{$('adminForm').reset();fillAdmin('')};$('deactivateAdmin').onclick=deactivate;state.month=state.date.slice(0,7);renderCalendar();if(location.protocol==='file:')setPreview(true);else load();
+
+async function submitReservation(event) {
+    event.preventDefault();
+
+    const feedback = $("bookingFeedback");
+    const button = $("bookingSubmit");
+
+    if (state.demo) {
+        feedback.textContent = "Switch to Live API mode to submit a real reservation.";
+        return;
+    }
+
+    if (!state.selected || !state.slot) {
+        feedback.textContent = "Please select equipment and a free time slot.";
+        return;
+    }
+
+    const purpose = $("bookingPurpose").value.trim();
+
+    if (!purpose) {
+        feedback.textContent = "Please enter the purpose of your reservation.";
+        return;
+    }
+
+    const start = new Date(state.slot.start);
+    const end = new Date(state.slot.end);
+
+    if (start <= new Date() || end <= start) {
+        feedback.textContent = "Please select a valid future time slot.";
+        return;
+    }
+
+    const payload = {
+        equipment_id: state.selected.id,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        purpose: purpose
+    };
+
+    const headers = {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID()
+    };
+
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+
+    if (csrf) {
+        headers["X-CSRF-Token"] = csrf;
+    }
+
+    button.disabled = true;
+    feedback.textContent = "Submitting reservation...";
+
+    try {
+        const result = await api("/api/reservations", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(payload)
+        });
+
+        feedback.textContent = `Reservation submitted! Status: ${result.status}.`;
+        $("bookingPurpose").value = "";
+
+        state.availability.clear();
+        await load();
+        await refreshMyReservations();
+
+        message(`Your reservation is ${result.status}. Calendar refreshed.`);
+    } catch (error) {
+        feedback.textContent = error.message;
+        message(error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function reservationTime(value){if(!value)return 'Time unavailable';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})}
+
+async function refreshMyReservations(){
+    const list=$('myReservationsList');
+    const status=$('reservationListStatus');
+    list.replaceChildren();
+    if(state.demo){status.textContent='Sample preview does not load real reservations.';return}
+    status.textContent='Loading your reservations…';
+    try{
+        const response=await api('/api/reservations?scope=mine');
+        const reservations=Array.isArray(response)?response:(response.items||response.reservations||[]);
+        status.textContent=reservations.length?`${reservations.length} reservation${reservations.length===1?'':'s'} found.`:'No reservations found.';
+        for(const reservation of reservations){
+            const card=build('div',undefined,'reservation-item');
+            const equipment=state.items.find(item=>item.id===reservation.equipment_id);
+            const title=equipment?.name||'Laboratory equipment';
+            const start=reservation.start||reservation.starts_at||reservation.start_at;
+            const end=reservation.end||reservation.ends_at||reservation.end_at;
+            const statusText=String(reservation.status||'Unknown');
+            card.append(build('strong',`${title} — ${statusText}`),build('p',`${reservationTime(start)} to ${reservationTime(end)}`,'muted'));
+            if(['Pending','Approved'].includes(statusText)&&reservation.id){
+                const button=build('button','Cancel reservation','secondary');
+                button.type='button';
+                button.setAttribute('aria-label',`Cancel ${statusText.toLowerCase()} reservation for ${title}`);
+                button.addEventListener('click',async()=>{
+                    button.disabled=true;
+                    status.textContent='Cancelling reservation…';
+                    try{
+                        const body=reservation.version===undefined?{}:{expected_version:reservation.version};
+                        await api(`/api/reservations/${encodeURIComponent(reservation.id)}/cancel`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+                        status.textContent='Reservation cancelled.';
+                        await load();
+                        await refreshMyReservations();
+                    }catch(error){status.textContent=`Cancellation failed: ${error.message}`;button.disabled=false;button.focus()}
+                });
+                card.append(button);
+            }
+            list.append(card);
+        }
+    }catch(error){status.textContent=`Could not load reservations: ${error.message}`}
+}
+
+$("reservationForm").addEventListener("submit", submitReservation);
+$("refreshReservations").addEventListener("click", refreshMyReservations);
+
 </script>
 </body>
 </html>
