@@ -306,8 +306,8 @@ def render(rows: list[dict], generated: str, build: str, root: Path = ROOT) -> s
     add("|---|---|---|---|---|---|---|---|")
     for row in rows:
         evidence = f"[log]({row['evidence_link']})" if row["evidence_link"].strip() else ""
-        # Links are relative to docs/reports/.
-        evidence = evidence.replace("](docs/", "](../")
+        # Links are relative to docs/reports/: docs/… is one level up, repo-root dirs (tests/…) two.
+        evidence = evidence.replace("](docs/", "](../").replace("](tests/", "](../../tests/")
         build_cell = f"`{row['build_commit']}`" if row["build_commit"].strip() else ""
         add(
             f"| {row['case_id']} | {_cell(row['title'])} | {row['level']} | {row['status']} | {build_cell} | "
