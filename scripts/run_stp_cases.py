@@ -11,10 +11,10 @@ a response alone does not prove the outcome). Results go to a Markdown log per c
     python scripts/run_stp_cases.py --base-url http://127.0.0.1:8000 \\
         --database-url postgresql://lab:lab@localhost:5432/lab_cases --init-schema --update-register
 
-Start the application against the same database with scripts/load_test_app.py (it supplies the
-test-only X-Test-User login the auth module cannot provide yet). Cases that need modules that do not
-exist yet record those steps as Blocked and the case as Blocked; nothing is guessed. See
-docs/operations/system-cases.md.
+Start the application against the same database with scripts/load_test_app.py (it supplies a
+test-only X-Test-User login header; the runner does not exercise the auth module's real login/CSRF
+flow). Cases that need modules that do not exist yet record those steps as Blocked and the case as
+Blocked; nothing is guessed. See docs/operations/system-cases.md.
 """
 
 from __future__ import annotations
@@ -883,8 +883,8 @@ def render(run: CaseRun, commit: str, where: str, server: str, started: datetime
     lines += ["", "## Deviations from the STP", ""]
     lines += [f"- {d}" for d in run.deviations]
     lines += [
-        "- Users are logged in with the test-only `X-Test-User` header; the auth module cannot log "
-        "users in yet. "
+        "- Users are logged in with the test-only `X-Test-User` header, so this run does not exercise "
+        "the auth module's real login, sessions or CSRF. "
         "Roles are still read from the database by the application.",
         "- The case was run through HTTP requests, not through the browser UI.",
         "- The fixture is synthetic and was inserted directly into the database.",

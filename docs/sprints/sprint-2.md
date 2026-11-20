@@ -13,6 +13,7 @@
 | #2 | Sreekar | Tag tests with STP case IDs, cover remaining branches | 19 Nov |
 | #3 | Sreekar | Report generator + interim Unit/Code/Branch Coverage reports | 19 Nov |
 | #5 | Sreekar | Backup job + restore drill (TC-NF-005) | 19 Nov |
+| #6 | Sreekar | Read-performance load test (TC-NF-001) | 19 Nov |
 | #14 | Sreekar | Pin PostgreSQL 16 client in CI (fix backup/restore drill) | 19 Nov |
 | #7 | Sreekar | STP system-case runner + recorded runs TC-F-014…017 | 19 Nov |
 | #8 | Sreekar | Generated System Validation Report | 19 Nov |

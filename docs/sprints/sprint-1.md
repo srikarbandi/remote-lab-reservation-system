@@ -4,7 +4,7 @@
 
 **Goal:** Build the core modules of the Remote Laboratory Equipment Reservation System on Flask + psycopg3 + PostgreSQL 16, with CI (ruff + pytest) on every PR.
 
-**Window:** 10 Oct 2026 (first commit) → ~13 Nov 2026 (module merges).
+**Window:** 10 Oct 2026 (first commit) → ~13 Nov 2026 for equipment and reservations. The authentication module (Spoorthy) was built during this sprint but **merged later, on 19 Nov (#11, #12), as spillover** into the Sprint 2 close-out.
 
 ## Who did what
 
