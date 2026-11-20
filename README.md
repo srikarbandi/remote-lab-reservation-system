@@ -15,7 +15,7 @@ A web application that lets students view and reserve laboratory equipment and t
 | STP (test plan) | Written, v1.0, 37 planned test cases. Approval pending |
 | Application | **Implemented.** Auth & accounts, equipment catalogue & availability, reservations & approvals, and maintenance/usage/reporting/notifications are built and merged on `main` |
 | Automated tests | **290 passing, 0 failed.** 90.7% line / 78.5% branch coverage. Reports in [`docs/reports/`](docs/reports/) |
-| STP execution | **11 of 37** cases executed: TC-F-014–017 as system cases (against the STP revision on `main`, `7b66d52`; #17's added scenarios not yet re-run), TC-F-002 and TC-SR-004 reconciled from recorded auth evidence, and TC-NF-001, TC-NF-005, TC-EDGE-003, TC-EDGE-005, TC-EDGE-006 from tagged system/integration evidence. The remaining 26 are supported by automated tests but not yet run as formal STP cases. See [`docs/reports/system-validation-report.md`](docs/reports/system-validation-report.md) |
+| STP execution | **15 of 37** cases executed (TC-F-001, 002, 014–017; TC-SR-001, 003, 004, 005; TC-NF-001, 005; TC-EDGE-003, 005, 006) — a mix of system-case runs, Spoorthy's auth/security closeout evidence, and tagged tests covering the exact steps. TC-F-014–017 were run against the STP revision on `main` (`7b66d52`; #17's added scenarios not yet re-run). The remaining 22 are supported by automated tests but not yet run as formal STP cases. See [`docs/reports/system-validation-report.md`](docs/reports/system-validation-report.md) |
 
 The booking policies and numeric targets in the documents are proposals pending faculty review. If a policy changes, the SRS, SAD and STP must be updated together.
 
@@ -127,6 +127,6 @@ Until a case has real evidence, its status stays `Not executed`. Do not record r
 - [x] Reservations and approvals (Soha)
 - [x] Maintenance, usage, reporting, notifications (Sreekar)
 - [x] Integrated build and smoke test — CI green on `main`, 290 automated tests pass
-- [ ] Execute the STP cases and fill the execution register — **partial:** 11 of 37 executed; the rest are backed by automated tests but not yet run as formal STP cases
+- [ ] Execute the STP cases and fill the execution register — **partial:** 15 of 37 executed; the rest are backed by automated tests but not yet run as formal STP cases
 - [ ] Update the STP `.docx` from the results and write the test summary
 - [ ] Faculty review
